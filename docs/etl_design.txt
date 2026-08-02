@@ -1,0 +1,429 @@
+=======================================================================
+PART 3.4 DELIVERABLE -- etl_design.txt
+ETL design: dimension loads, fact load, bridges, refresh strategy
+=======================================================================
+
+The working implementation is sql/05_etl.sql. This document explains the
+reasoning, covers the incremental path that the initial full load does not
+exercise, and states the constraints the source system imposes.
+
+THE CONSTRAINT THAT SHAPES EVERYTHING BELOW
+-------------------------------------------
+No table in the source system has created_at, updated_at, or any version
+column (finding B9). There is therefore NO WAY TO ASK THE SOURCE WHAT
+CHANGED. Every design choice about incremental loading, change detection
+and late-arriving data is a workaround for that single missing feature.
+Where a timestamp would give an exact answer, this design substitutes
+either a content hash or a time-boxed reprocessing window.
+
+A secondary constraint: the source cannot be altered, so its eight
+constraint gaps (B1-B8) must be defended against here. Each guard in
+sql/05_etl.sql is marked with the finding it addresses.
+
+
+=======================================================================
+1. DIMENSION LOAD LOGIC
+=======================================================================
+
+1.1 dim_date -- generated, not extracted
+----------------------------------------
+No source table contains a calendar, so dim_date is generated from a
+numbers sequence: 2023-01-01 to 2025-12-31, 1,096 rows.
+
+  FOR each day d in [range]:
+      date_key       := CAST(FORMAT(d,'YYYYMMDD') AS INT)   -- 20240612
+      full_date      := d
+      year, quarter, month, day_of_month, day_of_week ...
+      calendar_month := FORMAT(d, 'YYYY-MM')                -- '2024-06'
+      is_weekend     := (day_of_week IN (6,7))
+
+Loaded ONCE and never refreshed. The range deliberately extends a full
+year beyond the latest data so a late-arriving fact always finds a date
+key; a fact whose date_key does not exist would fail the foreign key and
+abort the load.
+
+Why date_key is YYYYMMDD rather than a sequence: it is readable in raw
+fact rows during debugging, sorts chronologically as an integer, and lets
+a human sanity-check a fact row without joining anything.
+
+1.2 dim_patient -- SCD Type 2, hash-based change detection
+-----------------------------------------------------------
+INITIAL LOAD
+  INSERT the unknown member first (patient_key = -1), then one row per
+  source patient with effective_from='1900-01-01',
+  effective_to='9999-12-31', is_current=1, and:
+
+      row_hash := MD5(mrn | first_name | last_name | date_of_birth | gender)
+
+SUBSEQUENT LOADS -- how updates are handled
+
+  Because there is no updated_at, change detection compares CONTENT:
+
+      FOR each patient p in source:
+          incoming_hash := MD5(p.mrn | p.first_name | ... )
+          current       := SELECT * FROM dim_patient
+                           WHERE patient_id = p.patient_id AND is_current = 1
+
+          IF current IS NULL:                       -- new patient
+              INSERT new row, is_current = 1
+
+          ELSE IF current.row_hash <> incoming_hash:  -- attributes changed
+              -- close the old version
+              UPDATE current SET effective_to = TODAY - 1 DAY,
+                                 is_current   = 0
+              -- open a new one
+              INSERT new row WITH effective_from = TODAY,
+                                  effective_to   = '9999-12-31',
+                                  is_current     = 1
+
+          ELSE: do nothing                          -- unchanged
+
+  The hash is what replaces the missing updated_at. It is exact for
+  detecting THAT something changed; what it cannot tell you is WHEN it
+  changed, so effective_from is the load date rather than the true event
+  date. That is a real limitation and it is the direct consequence of
+  finding B9. With source timestamps, effective_from would be accurate.
+
+  WHY TYPE 2 RATHER THAN TYPE 1 HERE: overwriting would rewrite history.
+  If a patient's recorded gender is corrected in 2025, Type 1 would make
+  every 2023 encounter report the new value, and last year's published
+  figures would silently stop reconciling. Type 2 keeps each encounter
+  pointing at the patient as they were recorded at the time.
+
+  AGE IS NOT IN THIS DIMENSION. Age changes with the calendar, not with
+  any source event, so an SCD mechanism driven by source changes would
+  never fire for it -- the value would simply rot. Age at the time of care
+  is computed once, at fact load, and stored on the fact row.
+
+1.3 dim_provider -- SCD Type 2, with specialty and department flattened
+------------------------------------------------------------------------
+Same hash-and-version mechanism as dim_patient, over:
+
+      row_hash := MD5(first_name | last_name | credential
+                      | specialty_id | department_id)
+
+This is the dimension where Type 2 genuinely earns its cost. Clinicians
+transfer between departments and change specialty. Without versioning, a
+cardiologist moving to the ER in 2025 would retroactively reassign three
+years of cardiology encounters to the ER, and every historical
+specialty-level report would change.
+
+The load LEFT JOINs specialties and departments rather than inner joining
+(GUARD B1): both FKs are nullable in the source, and an inner join would
+silently drop providers with no recorded specialty -- taking every one of
+their encounters out of the warehouse with them.
+
+1.4 dim_department -- SCD Type 1
+---------------------------------
+Overwrite in place. A department's floor or capacity changing is a
+correction to a current fact about the building, not a historical event
+worth preserving. Type 2 here would add versioning machinery to answer a
+question nobody asks.
+
+1.5 dim_diagnosis / dim_procedure -- conformed on CODE
+-------------------------------------------------------
+GUARD B6: the source has no UNIQUE on icd10_code or cpt_code, so the same
+clinical code can exist under two different surrogate ids and split every
+aggregate built on it. The load therefore GROUPs BY the code and keeps
+MIN(id) as a deterministic representative:
+
+      INSERT INTO dim_diagnosis (...)
+      SELECT MIN(diagnosis_id), icd10_code, MIN(icd10_description),
+             derive_chapter(icd10_code)
+      FROM source.diagnoses
+      GROUP BY icd10_code
+
+Conforming on the natural business key rather than the surrogate id is
+what makes the dimension trustworthy regardless of source hygiene.
+
+icd10_chapter and cpt_category are derived at load from the code
+structure, giving analysts a roll-up level the source has no table for.
+
+1.6 The unknown member (-1) in every dimension
+-----------------------------------------------
+Each dimension gets a row with key -1 before anything else is loaded. Any
+fact whose dimension lookup fails points there instead of carrying a NULL
+foreign key.
+
+This matters more than it looks. The alternative -- dropping facts whose
+dimension reference is missing -- loses real clinical activity in order to
+keep the model tidy, which is exactly backwards. With an unknown member
+the encounter is still counted, revenue still reconciles, and the data
+quality gap is VISIBLE as a row on a report rather than as a silent
+shortfall nobody notices.
+
+
+=======================================================================
+2. FACT TABLE LOAD LOGIC
+=======================================================================
+
+2.1 Dimension key lookup
+-------------------------
+For each source encounter, resolve every dimension key:
+
+      date_key           := CAST(FORMAT(encounter_date,'YYYYMMDD') AS INT)
+      discharge_date_key := same, or NULL if not discharged
+      patient_key        := lookup dim_patient  WHERE patient_id  = e.patient_id
+                                                  AND is_current = 1
+      provider_key       := lookup dim_provider WHERE provider_id = e.provider_id
+                                                  AND is_current = 1
+      department_key     := lookup dim_department
+      -- every lookup: LEFT JOIN, then COALESCE(key, -1)          GUARD B1
+
+Note "AND is_current = 1". On an initial load every row is current, so it
+is a no-op. It becomes essential the moment a Type 2 dimension has more
+than one version of a row, and writing it in from the start avoids a load
+that works today and quietly double-counts later.
+
+A PRODUCTION REFINEMENT NOT IMPLEMENTED HERE: a strictly correct Type 2
+lookup matches the version that was in effect ON THE ENCOUNTER DATE:
+
+      WHERE patient_id = e.patient_id
+        AND e.encounter_date BETWEEN effective_from AND effective_to
+
+rather than taking the current version. With one version per row the two
+are identical. They diverge the moment history exists, and the date-ranged
+form is the one that keeps old reports reconciling. It is noted rather
+than built because it cannot be tested against a single-version dimension.
+
+2.2 Computing the pre-aggregated measures
+------------------------------------------
+Each is computed once, in its own pass, then joined in:
+
+  BILLING (GUARD B7 -- billing.encounter_id is not UNIQUE in the source)
+      Aggregate billing to encounter grain FIRST:
+          claim_amount   := SUM(claim_amount)          GROUP BY encounter_id
+          allowed_amount := SUM(allowed) WHERE status <> 'Denied'
+          denied_amount  := SUM(allowed) WHERE status  = 'Denied'
+          claim_status   := worst status wins (Denied > Pending > Paid)
+      Aggregating first means a double-billed encounter is collapsed once,
+      at load, instead of double-counting in every downstream query.
+
+  DIAGNOSIS / PROCEDURE COUNTS (GUARD B2/B3)
+          diagnosis_count := COUNT(DISTINCT diagnosis_id) GROUP BY encounter_id
+          procedure_count := COUNT(DISTINCT procedure_id) GROUP BY encounter_id
+      DISTINCT, not COUNT(*): the source permits the same diagnosis to be
+      recorded twice on one encounter, and the stored count must not
+      inherit that.
+
+  PRINCIPAL DIAGNOSIS
+          the diagnosis with the lowest diagnosis_sequence, ties broken by
+          diagnosis_id so the result is deterministic across runs.
+
+  READMISSION FLAG -- the expensive one, run ONCE
+          is_readmission_30d := 1 IF EXISTS another encounter by the same
+          patient with encounter_date in (discharge_date, discharge_date+30d]
+          AND this encounter is Inpatient with a discharge date.
+      This is Q3's entire self-join, executed here instead of at query
+      time. It is the single highest-value computation in the ETL.
+
+  LENGTH OF STAY (GUARD B8)
+          NULL if discharge_date IS NULL OR discharge_date < encounter_date,
+          else TIMESTAMPDIFF(MINUTE, encounter_date, discharge_date)
+      Nothing in the source prevents a negative stay. Storing one would
+      poison every average built on the column, so it is rejected to NULL
+      rather than propagated.
+
+  PATIENT AGE
+          TIMESTAMPDIFF(YEAR, date_of_birth, encounter_date), banded into
+          '0-17' / '18-34' / '35-49' / '50-64' / '65-84' / '85+'.
+      Computed against the ENCOUNTER date, which is what makes it correct
+      permanently rather than only on the day it was loaded.
+
+2.3 Handling missing data -- the policy, stated once
+-----------------------------------------------------
+      Missing dimension reference  -> unknown member (-1), row is KEPT
+      Missing measure              -> COALESCE to 0
+      Missing date                 -> NULL key where nullable; a NULL
+                                      encounter_date is rejected, since a
+                                      fact with no date cannot be placed
+                                      on any timeline
+      Impossible value (negative
+      LOS, discharge before admit) -> NULL the derived measure, keep the row
+      Duplicate junction row       -> collapsed by the bridge primary key
+
+The governing principle: NEVER DROP A FACT TO PRESERVE TIDINESS. An
+encounter that happened belongs in the warehouse even if its provider
+reference is broken. Rejected and defaulted rows are counted in
+etl_load_log.rows_rejected so the gap is measured rather than assumed
+absent.
+
+
+=======================================================================
+3. BRIDGE TABLE LOAD LOGIC
+=======================================================================
+
+Bridges load AFTER the fact table, because they need encounter_key --
+which is assigned by the fact insert.
+
+  bridge_encounter_diagnoses
+      FOR each row in source.encounter_diagnoses:
+          encounter_key := lookup fact_encounters BY encounter_id
+          diagnosis_key := lookup dim_diagnosis BY ICD-10 CODE   GUARD B6
+                           (via source.diagnoses to resolve id -> code)
+          is_principal  := (diagnosis_sequence = 1)
+          INSERT IGNORE                                          GUARD B2
+
+  bridge_encounter_procedures
+      same shape; procedure_date_key resolved to dim_date.
+          INSERT IGNORE                                          GUARD B3
+
+TWO DELIBERATE CHOICES
+
+  Joining dim_diagnosis on icd10_code rather than diagnosis_id. The
+  dimension was conformed on code, so if the source ever holds two ids for
+  I10, both bridge rows resolve to the same dimension row and the counts
+  stay whole.
+
+  INSERT IGNORE against the primary key (encounter_key, diagnosis_key).
+  The primary key already makes duplicates impossible; IGNORE makes the
+  intent explicit rather than relying on a constraint violation to enforce
+  a business rule. Duplicates collapse silently, which is correct here --
+  the same diagnosis coded twice on one visit is a data entry artifact,
+  not two diagnoses.
+
+THE AGGREGATE TABLE
+  agg_diagnosis_procedure_pair is built last, from the bridges. It forms
+  the ~2.06M pair rows once and stores the ~1,200 distinct results.
+
+  total_allowed is ALLOCATED, not summed:
+
+      SUM(allowed_amount / (diagnosis_count * procedure_count))
+
+  Summing allowed_amount across pair rows is precisely the fan trap that
+  produced a 7.4x revenue overstatement. Dividing each encounter's revenue
+  by its own pair count means the column totals back to true revenue:
+  verified at $754,318,058, matching the fact table exactly.
+
+
+=======================================================================
+4. REFRESH STRATEGY
+=======================================================================
+
+4.1 Cadence
+------------
+Nightly, off-peak. Clinical analytics answers questions about yesterday
+and last quarter; nobody makes a decision on an encounter that closed
+forty minutes ago. Hourly loading would add operational risk for no
+analytical benefit.
+
+The initial full load takes 68 seconds against 300,000 encounters. A
+nightly incremental touches a small fraction of that.
+
+4.2 What is fully reloaded, and what is incremental
+----------------------------------------------------
+  dim_date         never reloaded (extend the range every few years)
+  dim_department   full reload -- 12 rows
+  dim_diagnosis    full reload -- 40 rows
+  dim_procedure    full reload -- 30 rows
+  dim_provider     full compare, SCD2 versioning -- 60 rows
+  dim_patient      full compare, SCD2 versioning -- 50,000 rows
+  fact_encounters  INCREMENTAL
+  bridges          incremental, following the fact
+  aggregate table  full rebuild -- 1,200 rows
+
+Dimensions are compared in full because they are small. The largest is
+50,000 rows; hashing and comparing all of them costs seconds. Building
+incremental logic for a 50,000-row table would add a failure mode to save
+no measurable time. Correctness beats cleverness at this scale.
+
+4.3 The incremental fact load, without any source timestamp
+------------------------------------------------------------
+Two mechanisms, because one is not sufficient.
+
+  MECHANISM 1 -- HIGH-WATER MARK, catches NEW encounters
+
+      last_hwm := SELECT high_water_mark FROM etl_load_log
+                  WHERE load_finished_at IS NOT NULL
+                  ORDER BY load_id DESC LIMIT 1
+
+      SELECT * FROM source.encounters WHERE encounter_id > last_hwm
+
+  encounter_id is monotonic, so this captures everything created since the
+  last successful load with no timestamp required.
+
+  MECHANISM 2 -- ROLLING 30-DAY RESTATEMENT, catches CHANGED encounters
+
+  The high-water mark cannot see EDITS to encounters it already loaded,
+  and in this domain edits are the normal case:
+      * a claim moves Pending -> Paid, 1 to 20 days after discharge
+      * a diagnosis code is amended after clinical review
+      * a discharge date is corrected
+
+  So every load also REPROCESSES the trailing 30 days:
+
+      DELETE FROM fact_encounters
+      WHERE date_key >= key_of(TODAY - 30 DAYS)
+      -- then re-derive those rows from source, and their bridge rows
+
+  Thirty days is chosen from the data, not by habit: claims land 1-20 days
+  after discharge, so a 30-day window covers the full billing tail with
+  margin. If the payer contract allowed 60-day adjudication, the window
+  would be 90 days.
+
+  COST: the window reprocesses roughly 12,500 encounters (300,000 / 24
+  months) that mostly have not changed. That is the price of the source
+  having no updated_at column, paid every single night.
+
+  WHY DELETE-AND-REINSERT RATHER THAN UPDATE: the fact row's measures are
+  derived from four separate source aggregates. Recomputing the row is
+  simpler and less error-prone than working out which of thirteen measures
+  moved, and at 12,500 rows the difference is not measurable.
+
+4.4 Late-arriving facts
+------------------------
+  WITHIN 30 DAYS -- handled automatically by the restatement window.
+
+  OLDER THAN 30 DAYS -- caught by the high-water mark if the encounter is
+  new (a backdated record still gets a new encounter_id). An EDIT to an
+  encounter older than 30 days is NOT caught by either mechanism. This is
+  a known, accepted gap. Mitigation is a weekly reconciliation job:
+
+      compare COUNT(*) and SUM(allowed_amount) per month, source vs
+      warehouse; any month that diverges is queued for full restatement
+
+  This turns an undetectable silent drift into a detected discrepancy with
+  a defined repair path -- which is the best available answer without
+  source-side change tracking.
+
+4.5 Late-arriving DIMENSIONS
+-----------------------------
+An encounter can reference a provider hired since the last dimension load.
+Because dimensions load BEFORE facts in every run, and dimensions are
+fully compared rather than incrementally filtered, this resolves itself.
+Should a lookup still fail, the unknown member (-1) catches it and the
+next load repairs the key once the dimension row exists.
+
+4.6 Failure handling
+---------------------
+Each load writes a row to etl_load_log at start and closes it at the end.
+An unclosed row (load_finished_at IS NULL) marks a crashed run, and the
+next load reads its high-water mark from the last SUCCESSFUL load -- so a
+failure re-processes rather than skips.
+
+Each phase commits separately, so a failure part-way through leaves the
+warehouse in a known state rather than half-loaded. Because the
+incremental fact load is DELETE-then-INSERT over a bounded window, and the
+dimension loads are idempotent comparisons, RERUNNING A FAILED LOAD IS
+SAFE. That property is worth more in operations than any performance
+optimisation in this document.
+
+4.7 The one source change that would improve all of this
+---------------------------------------------------------
+Adding to source.encounters and source.billing:
+
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                    ON UPDATE CURRENT_TIMESTAMP
+
+would replace the entire 30-day restatement window with:
+
+      WHERE updated_at > :last_load_watermark
+
+Exact instead of approximate, cheaper every night, and it would close the
+older-than-30-days gap in 4.4 completely. It would also make SCD Type 2
+effective_from dates accurate rather than load-dated.
+
+Cost: two columns and an index. This is recorded as the primary
+recommendation to the source system team, and is written as runnable DDL
+in sql/99_oltp_hardening.sql -- which is deliberately not executed, since
+the source system is not ours to change.

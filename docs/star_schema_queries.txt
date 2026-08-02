@@ -1,0 +1,342 @@
+=======================================================================
+PART 3.3 DELIVERABLE -- star_schema_queries.txt
+The four business questions rewritten against the star schema,
+with measured before/after performance
+=======================================================================
+
+METHOD
+------
+Identical to Part 2: MySQL 8.4.10, same machine, same 300,000-encounter
+dataset, median of 3 warm runs after a discarded warm-up.
+
+EQUIVALENCE IS VERIFIED, NOT ASSUMED
+Every star query's full output was diffed row-by-row against its OLTP
+counterpart. All four are byte-identical: Q1 864 rows, Q2 top-20, Q3 12
+rows, Q4 288 rows. A faster query that returns different numbers is not
+an optimisation, so this check came before any timing was recorded.
+
+Two real defects were caught by that diff and fixed:
+  * Q3 -- Cardiology and Psychiatry both score 21.84%, and with no
+    secondary sort key the two engines ordered the tie differently.
+    Values were always identical; a tie-break was added to both queries.
+  * Q4 -- the star version under-reported by $84,420,895. The ETL splits
+    the source's single allowed_amount into allowed vs denied, so the
+    equivalent figure is SUM(allowed_amount + denied_amount). Not a bug
+    in the warehouse; a genuine semantic difference that had to be made
+    explicit. See the Q4 note below.
+
+
+=======================================================================
+RESULTS SUMMARY
+=======================================================================
+
+  Query  OLTP       Star       Change        Mechanism
+  -----  ---------  ---------  ------------  --------------------------
+  Q1      1.12 s     1.52 s    0.74x SLOWER  wider rows, no help for
+                                             COUNT(DISTINCT)
+  Q2     22.56 s     0.03 s     752x faster  pre-aggregated pair table
+  Q2b    22.56 s     4.08 s     5.5x faster  bridges only, no agg table
+  Q3      0.80 s     0.21 s     3.8x faster  readmission flag precomputed
+  Q4      2.05 s     1.26 s     1.63x faster billing join eliminated
+
+Q2b is reported separately and deliberately. It answers Q2 from the
+bridges with no aggregate table, and it is the honest measure of what the
+STAR SCHEMA SHAPE alone contributes: 5.5x. The 752x figure includes
+precomputation, which is a different mechanism and should not be
+attributed to dimensional modelling.
+
+
+=======================================================================
+Q1: Monthly Encounters by Specialty  --  1.12s -> 1.52s  (SLOWER)
+=======================================================================
+
+    SELECT
+        d.calendar_month                AS month,
+        pr.specialty_name,
+        f.encounter_type,
+        SUM(f.encounter_count)          AS encounters,
+        COUNT(DISTINCT f.patient_key)   AS unique_patients
+    FROM fact_encounters f
+    JOIN dim_date        d  ON d.date_key      = f.date_key
+    JOIN dim_provider    pr ON pr.provider_key = f.provider_key
+    GROUP BY d.calendar_month, pr.specialty_name, f.encounter_type
+    ORDER BY d.calendar_month, pr.specialty_name, f.encounter_type;
+
+Measured: 1.52s vs 1.12s original -- 0.74x, i.e. 36% SLOWER.
+
+WHY IT GOT SLOWER
+
+This result was not expected and is reported as measured.
+
+Two things were supposed to help. The month string is now stored in
+dim_date instead of being recomputed by DATE_FORMAT for 300,000 rows, and
+specialty_name sits directly on dim_provider instead of requiring a second
+hop through the providers table. Both are real improvements. Neither is
+where the time goes.
+
+EXPLAIN ANALYZE shows the actual cost:
+
+    -> Group aggregate: sum(...), count(distinct patient_key)
+                                          (actual time=1381..1586 rows=864)
+      -> Sort: calendar_month, specialty_name, encounter_type
+                                          (actual time=1381..1407 rows=300000)
+
+1,381 ms of a 1,586 ms query is inside the group aggregate, and the
+dominant term there is COUNT(DISTINCT patient_key). That operation has to
+retain and deduplicate a set of patient keys per group across 300,000
+rows. The star schema does nothing about it. Dimensional modelling reduces
+JOIN DEPTH; it has no effect on the cost of a distinct-count.
+
+And the star schema actively hurts here, because the fact table is bigger:
+
+    healthcare_oltp.encounters      17.5 MB data /  47.6 MB total
+    healthcare_dw.fact_encounters   33.6 MB data / 108.2 MB total
+
+fact_encounters is roughly twice the size on disk. It carries thirteen
+precomputed measure columns -- length_of_stay_minutes, patient_age_years,
+diagnosis_count, procedure_count, three money columns, two flags, and so
+on. Q1 uses NONE of them. It scans past all of them on every row.
+
+That is the trade in its clearest form. Precomputation makes the queries
+that use it dramatically faster and makes every other query slightly
+slower, because they all pay to scan columns they do not read. Q3 gains
+3.8x from is_readmission_30d; Q1 pays part of the storage cost for it and
+gets nothing back.
+
+WHAT WOULD FIX IT
+
+An aggregate table at month/specialty/type grain, the same technique used
+for Q2. Roughly 864 rows, and Q1 becomes a sub-millisecond lookup. It was
+not built, because building an aggregate for every query that is slightly
+slow is how a warehouse turns into an unmaintainable pile of summary
+tables. The honest engineering answer at 1.5 seconds is to leave it.
+
+A column-store engine would also eliminate the penalty entirely, since it
+would read only the five columns the query touches. That is a real
+argument for running analytics on ClickHouse, DuckDB or BigQuery rather
+than on row-store MySQL, and it is out of scope here.
+
+
+=======================================================================
+Q2: Top Diagnosis-Procedure Pairs  --  22.56s -> 0.03s  (752x faster)
+=======================================================================
+
+    SELECT dd.icd10_code, dd.icd10_description,
+           dp.cpt_code,  dp.cpt_description,
+           a.encounter_count
+    FROM agg_diagnosis_procedure_pair a
+    JOIN dim_diagnosis dd ON dd.diagnosis_key = a.diagnosis_key
+    JOIN dim_procedure dp ON dp.procedure_key = a.procedure_key
+    ORDER BY a.encounter_count DESC
+    LIMIT 20;
+
+Measured: 0.03s vs 22.56s -- 752x faster.
+
+WHY IT IS FASTER
+
+The OLTP version built 2,060,000 intermediate rows and sorted them to
+return 20. This reads 1,200 rows that were computed once, at load time,
+and never rebuilt.
+
+That is the entire mechanism, and it must be attributed correctly:
+THIS SPEEDUP IS PRECOMPUTATION, NOT DIMENSIONAL MODELLING. An equivalent
+aggregate table could have been built directly off the OLTP schema and
+would have performed the same. Claiming 752x as evidence that "star
+schemas are faster" would be false.
+
+What the star schema actually contributes is a stable grain to aggregate
+FROM. The ETL builds this table from the bridges, whose grain is declared
+and enforced by a primary key. Built off the OLTP junction tables, the
+same aggregate would have to defend against duplicate rows, split ICD-10
+codes under two ids, and NULL foreign keys on every run -- see the eight
+guards in sql/05_etl.sql.
+
+
+=======================================================================
+Q2b: The same question WITHOUT the aggregate table  --  22.56s -> 4.08s
+=======================================================================
+
+    SELECT dd.icd10_code, dd.icd10_description,
+           dp.cpt_code,  dp.cpt_description, x.encounter_count
+    FROM (
+        SELECT bd.diagnosis_key, bp.procedure_key,
+               COUNT(DISTINCT bd.encounter_key) AS encounter_count
+        FROM bridge_encounter_diagnoses  bd
+        JOIN bridge_encounter_procedures bp ON bp.encounter_key = bd.encounter_key
+        GROUP BY bd.diagnosis_key, bp.procedure_key
+        ORDER BY encounter_count DESC
+        LIMIT 20
+    ) x
+    JOIN dim_diagnosis dd ON dd.diagnosis_key = x.diagnosis_key
+    JOIN dim_procedure dp ON dp.procedure_key = x.procedure_key
+    ORDER BY x.encounter_count DESC;
+
+Measured: 4.08s vs 22.56s -- 5.5x faster.
+
+THIS IS THE HONEST STAR-SCHEMA-ONLY NUMBER FOR Q2.
+
+The fan is still there. This query still forms ~2.06 million pair rows,
+because pairing diagnoses with procedures inherently produces pairs and no
+schema can answer the question without forming them. Three things changed:
+
+1. ROW WIDTH. The OLTP version dragged icd10_description VARCHAR(200) and
+   cpt_description VARCHAR(200) through the sort, because they appear in
+   the GROUP BY. Here the grouping happens on two integers and the text is
+   joined on afterwards, against 20 surviving rows. Sorting 2M narrow rows
+   instead of 2M wide ones is most of the 5.5x.
+
+2. FEWER TABLES IN THE HOT PATH. The OLTP query joins four tables to form
+   the pairs; this joins two.
+
+3. NO MEASURE IS REACHABLE. Neither bridge contains money. The 7.4x
+   revenue inflation demonstrated in README.md cannot be written from this
+   shape, because there is nothing to sum. The wrong answer went from
+   "discouraged by documentation" to "structurally impossible" -- which is
+   worth more than the 5.5x.
+
+
+=======================================================================
+Q3: 30-Day Readmission Rate  --  0.80s -> 0.21s  (3.8x faster)
+=======================================================================
+
+    SELECT
+        pr.specialty_name,
+        SUM(f.is_index_admission)                            AS inpatient_discharges,
+        SUM(f.is_readmission_30d)                            AS readmissions_30d,
+        ROUND(100 * SUM(f.is_readmission_30d)
+                  / NULLIF(SUM(f.is_index_admission), 0), 2) AS readmission_rate_pct
+    FROM fact_encounters f
+    JOIN dim_provider    pr ON pr.provider_key = f.provider_key
+    WHERE f.is_index_admission = 1
+    GROUP BY pr.specialty_name
+    ORDER BY readmission_rate_pct DESC, pr.specialty_name;
+
+Measured: 0.21s vs 0.80s -- 3.8x faster.
+
+WHY IT IS FASTER
+
+The self-join is gone. Not optimised -- gone. It was executed ONCE, by the
+ETL, and its answer stored in a single TINYINT column:
+
+    INSERT INTO _readmit
+    SELECT DISTINCT i.encounter_id
+    FROM healthcare_oltp.encounters i
+    JOIN healthcare_oltp.encounters r
+      ON  r.patient_id     =  i.patient_id
+      AND r.encounter_id  <>  i.encounter_id
+      AND r.encounter_date >  i.discharge_date
+      AND r.encounter_date <= i.discharge_date + INTERVAL 30 DAY
+    WHERE i.encounter_type = 'Inpatient' AND i.discharge_date IS NOT NULL;
+
+What remains at query time is a filtered scan and a GROUP BY over 12
+specialties, supported by idx_type_readmit.
+
+This is the mechanism the whole exercise is about, and it is worth stating
+plainly: THE WORK DID NOT GET CHEAPER. IT MOVED. The same self-join runs
+once per load instead of once per analyst per question. If nobody asks the
+readmission question, the star schema is strictly slower overall, because
+the ETL did work nobody needed.
+
+A note on modesty: 3.8x is the smallest speedup of the three that improved,
+because the OLTP version was already fast. The brief's hint predicted a
+self-join disaster; the automatic FK index on patient_id meant it never
+happened. The gain is real but it is 0.6 seconds, not a rescue.
+
+Also worth noting: the readmission DEFINITION now lives in the ETL, in one
+place, instead of being re-implemented in every analyst's query. Ten
+analysts writing that self-join by hand would produce several subtly
+different definitions -- some restricting the return to inpatient, some
+using >= instead of >, some forgetting to exclude the index encounter
+itself. Consistency is arguably worth more here than the 0.6 seconds.
+
+
+=======================================================================
+Q4: Revenue by Specialty & Month  --  2.05s -> 1.26s  (1.63x faster)
+=======================================================================
+
+    SELECT
+        d.calendar_month            AS month,
+        pr.specialty_name,
+        SUM(f.encounter_count)      AS claims,
+        ROUND(SUM(f.allowed_amount + f.denied_amount), 2) AS total_allowed
+    FROM fact_encounters f
+    JOIN dim_date        d  ON d.date_key      = f.date_key
+    JOIN dim_provider    pr ON pr.provider_key = f.provider_key
+    GROUP BY d.calendar_month, pr.specialty_name
+    ORDER BY d.calendar_month, pr.specialty_name;
+
+Measured: 1.26s vs 2.05s -- 1.63x faster.
+
+WHY IT IS FASTER
+
+The billing table is gone from the query. In the OLTP schema the money
+lives in billing and the date lives in encounters, so 300,000 rows must be
+joined before anything can be summed. Here the money is already ON the
+encounter row, put there once by the ETL.
+
+The join chain went from 4 tables to 3, and the two remaining joins are
+against a 1,096-row and a 61-row dimension rather than a 300,000-row
+transaction table.
+
+The month is also no longer derived by DATE_FORMAT on every row, which is
+the same saving Q1 got -- and, as Q1 shows, that saving alone is not large.
+Most of the 1.63x here is the eliminated billing join.
+
+ON (allowed_amount + denied_amount)
+
+The ETL splits the source's single allowed_amount column into two measures
+by claim status. Reproducing the OLTP figure exactly therefore requires
+adding them back: 754,318,058 + 84,420,895 = 838,738,953, matching to the
+cent.
+
+The split is kept deliberately. This schema can now report realisable
+revenue, denied revenue and denial rate by specialty with no reference to
+claim_status at all. The OLTP query cannot separate them without an extra
+predicate -- and, more importantly, most analysts writing that query would
+never notice they had counted $84.4M of rejected claims as revenue.
+
+That is a correctness improvement, not a performance one, and it is
+arguably the more valuable of the two.
+
+
+=======================================================================
+WHAT THE NUMBERS ACTUALLY SHOW
+=======================================================================
+
+Aggregate result: 26.53 seconds of OLTP query time became 3.02 seconds
+(Q1 + Q2 + Q3 + Q4), an 8.8x overall improvement. But the aggregate hides
+the shape of the result, which is the interesting part:
+
+  ONE query got dramatically faster       Q2, and mostly by precomputation
+  TWO got moderately faster               Q3 3.8x, Q4 1.63x
+  ONE got slower                          Q1, 0.74x
+
+The mechanisms, ranked by how much they actually delivered:
+
+  1. PRECOMPUTATION (Q2 752x, Q3 3.8x). Doing expensive work once at load
+     time instead of once per query. By far the largest effect, and not
+     specific to star schemas.
+
+  2. COLLAPSING JOINS BY DENORMALISING (Q4 1.63x). Putting the measure on
+     the fact row and the attribute on the dimension row. This is the
+     dimensional modelling contribution proper. Real, and moderate.
+
+  3. NARROWER INTERMEDIATE ROWS (Q2b 5.5x). Grouping on integer keys and
+     joining wide text on afterwards.
+
+  4. NOT DERIVING GROUPING KEYS (part of Q1 and Q4). Storing '2024-06'
+     once per day rather than computing it 300,000 times per query.
+     Measurable, small.
+
+And the cost side, which a before/after table tends to hide:
+
+  * fact_encounters is 2.3x the size of encounters on disk (108 MB vs
+    47.6 MB). Every query pays that scan cost, including the ones that
+    read none of the precomputed columns.
+  * The ETL takes 68 seconds. That is 68 seconds of work performed
+    whether or not anyone asks a question.
+  * The warehouse is a second copy of the data and is stale between loads.
+
+Q1 is the single most useful result in this table, because it is the one
+that failed. A star schema is not uniformly faster. It is faster for the
+queries you designed it for, and slower for the ones you did not.
