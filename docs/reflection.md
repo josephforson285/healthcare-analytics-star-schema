@@ -78,8 +78,8 @@ two got moderately faster, and one got slower.
 
 **Correctness that is structural rather than documented.** This is the larger
 gain and it does not appear in any timing table. In the OLTP schema, joining
-both junction tables and summing `allowed_amount` reports **$6,276.6M against a
-true $838.7M** — a 7.4× overstatement, from a query that raises no error. In the
+both junction tables and summing `allowed_amount` reports **$5,752.3M against a
+true $838.7M** — a 6.9× overstatement, from a query that raises no error. In the
 star schema, neither bridge contains a monetary column. The wrong answer is not
 discouraged by a comment; it is *unwriteable*.
 
@@ -99,9 +99,9 @@ claims as revenue**. Nobody writing that query would have noticed.
 **Storage.** `fact_encounters` is 108.2 MB against `encounters` at 47.6 MB — 2.3×,
 for the same 300,000 rows. Thirteen precomputed measure columns.
 
-**ETL complexity.** 400 lines carrying eight explicit data-quality guards, an
+**ETL complexity.** ~490 lines carrying explicit data-quality guards, an
 SCD Type 2 mechanism, a high-water mark, and a rolling restatement window. That
-is 400 lines of code that can break, and the queries silently return wrong
+is ~490 lines of code that can break, and the queries silently return wrong
 answers when it does. The OLTP schema needs none of it.
 
 **Staleness.** The warehouse is correct as of the last load. Not suitable for
@@ -120,7 +120,7 @@ Q1**. Real, but not transformative. At this data volume, most of these queries
 were survivable in the OLTP schema.
 
 What makes it worth it is the fan trap. A schema in which the obvious query
-returns a number 7.4× too large is not slow, it is *dangerous*, and no amount of
+returns a number 6.9× too large is not slow, it is *dangerous*, and no amount of
 indexing fixes that. The star schema's real contribution here is making the
 correct query the easy one.
 
@@ -185,6 +185,16 @@ Three changes:
 ---
 
 ## 4. Performance quantification
+
+> **Measurement variance — read before the numbers below.** Every timing was
+> re-measured in a second session on the same machine. All figures moved by
+> almost exactly 2× — uniformly, across both OLTP and star columns — while the
+> query plans and intermediate row counts stayed **identical to the row**. That
+> is machine speed varying, not query behaviour. Treat absolute seconds as ±25%
+> at best; the **ratios** held across both sessions and the conclusions rest on
+> those. Full comparison and the ruled-out hypotheses:
+> [`results/measurement_sessions.txt`](../results/measurement_sessions.txt).
+
 
 All figures: MySQL 8.4.10, same machine, 300,000 encounters (~2.3M rows), median
 of 3 warm runs. Raw plans in [`results/`](../results/). **Every star query's full
@@ -274,7 +284,7 @@ improve and got worse; the "missing index" bottleneck the hints imply does not
 exist, because InnoDB indexes foreign key columns automatically. Every one of
 those was caught by running the query rather than reasoning about it.
 
-**The honest summary:** the star schema here bought a 7.4× correctness guarantee
+**The honest summary:** the star schema here bought a 6.9× correctness guarantee
 and an uneven 0.74×–752× performance change whose largest component is not
 dimensional modelling at all. Both are worth having. Neither is what a
 before/after table alone would have shown.

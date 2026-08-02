@@ -28,13 +28,13 @@ comparable across runs and machines.
 | diagnoses | 40 (real ICD-10) |
 | procedures | 30 (real CPT) |
 | encounters | 300,000 |
-| encounter_diagnoses | 897,355 |
-| encounter_procedures | 750,000 |
+| encounter_diagnoses | 858,360 |
+| encounter_procedures | 721,035 |
 | billing | 300,000 |
 
 Encounter mix 70% Outpatient / 20% ER / 10% Inpatient; average length of stay
 0.9h / 6.0h / 5.5 days respectively. Two years of activity (2023–2024),
-$845.8M in allowed amounts.
+$838.7M in allowed amounts.
 
 ## The core problem this schema has
 

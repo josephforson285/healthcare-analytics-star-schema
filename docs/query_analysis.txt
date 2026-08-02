@@ -5,6 +5,20 @@ Four business questions answered against the normalized OLTP schema
 
 MEASUREMENT METHOD
 ------------------
+MEASUREMENT VARIANCE -- READ BEFORE THE NUMBERS BELOW
+------------------------------------------------------
+Every timing here was re-measured in a second session on the same machine.
+All figures moved by almost exactly 2x -- uniformly, in both the OLTP and
+star columns -- while the query plans and intermediate row counts stayed
+IDENTICAL to the row. That is machine speed varying, not query behaviour.
+
+Treat absolute seconds as +/-25% at best. The RATIOS held across both
+sessions (Q1 slower both times; Q3 ~4x faster both times; Q4 ~1.5x both
+times) and the conclusions rest on those, not on any single wall-clock
+figure. Full comparison and the ruled-out hypotheses:
+results/measurement_sessions.txt
+
+
 Dataset      : 300,000 encounters / ~2.3M rows total (sql/02_generate_data.sql)
 Server       : MySQL 8.4.10, InnoDB, default buffer pool
 Timing       : median of 3 warm runs; one discarded warm-up run before each
@@ -132,10 +146,10 @@ both at once changes the grain of the result set from "one row per
 encounter" to "one row per diagnosis-procedure pair". Any additive measure
 summed in this shape is silently multiplied:
 
-    SELECT SUM(allowed_amount) with both junctions joined -> $6,276.6M
-    SELECT SUM(allowed_amount) from billing alone         ->   $845.8M
+    SELECT SUM(allowed_amount) with both junctions joined -> $5,752.3M
+    SELECT SUM(allowed_amount) from billing alone         ->   $838.7M
 
-A 7.4x overstatement of revenue, from a query that returns no error. This
+A 6.9x overstatement of revenue, from a query that returns no error. This
 query survives only because it uses COUNT(DISTINCT ed.encounter_id) rather
 than COUNT(*), and touches no monetary column at all.
 

@@ -6,6 +6,20 @@ with measured before/after performance
 
 METHOD
 ------
+MEASUREMENT VARIANCE -- READ BEFORE THE NUMBERS BELOW
+------------------------------------------------------
+Every timing here was re-measured in a second session on the same machine.
+All figures moved by almost exactly 2x -- uniformly, in both the OLTP and
+star columns -- while the query plans and intermediate row counts stayed
+IDENTICAL to the row. That is machine speed varying, not query behaviour.
+
+Treat absolute seconds as +/-25% at best. The RATIOS held across both
+sessions (Q1 slower both times; Q3 ~4x faster both times; Q4 ~1.5x both
+times) and the conclusions rest on those, not on any single wall-clock
+figure. Full comparison and the ruled-out hypotheses:
+results/measurement_sessions.txt
+
+
 Identical to Part 2: MySQL 8.4.10, same machine, same 300,000-encounter
 dataset, median of 3 warm runs after a discarded warm-up.
 
@@ -188,7 +202,7 @@ schema can answer the question without forming them. Three things changed:
 2. FEWER TABLES IN THE HOT PATH. The OLTP query joins four tables to form
    the pairs; this joins two.
 
-3. NO MEASURE IS REACHABLE. Neither bridge contains money. The 7.4x
+3. NO MEASURE IS REACHABLE. Neither bridge contains money. The 6.9x
    revenue inflation demonstrated in README.md cannot be written from this
    shape, because there is nothing to sum. The wrong answer went from
    "discouraged by documentation" to "structurally impossible" -- which is

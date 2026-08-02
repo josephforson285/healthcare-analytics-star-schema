@@ -291,7 +291,7 @@ THE AGGREGATE TABLE
       SUM(allowed_amount / (diagnosis_count * procedure_count))
 
   Summing allowed_amount across pair rows is precisely the fan trap that
-  produced a 7.4x revenue overstatement. Dividing each encounter's revenue
+  produced a 6.9x revenue overstatement. Dividing each encounter's revenue
   by its own pair count means the column totals back to true revenue:
   verified at $754,318,058, matching the fact table exactly.
 

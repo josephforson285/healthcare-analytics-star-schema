@@ -353,8 +353,26 @@ INSERT INTO fact_encounters (
     is_index_admission, is_readmission_30d)
 SELECT
     e.encounter_id,
-    COALESCE(e.encounter_type, 'Unknown'),
-    COALESCE(bl.claim_status, 'No Claim'),
+    -- GUARD B4: encounter_type is free-text VARCHAR(50) in the source with no
+    -- lookup table and no CHECK, so 'ER', 'er' and 'Emergency' are all
+    -- storable and would fragment into separate groups on any report. The
+    -- domain is closed here instead: anything outside the three known values
+    -- lands in 'Unknown', where it is visible, rather than silently becoming
+    -- a fourth encounter type nobody notices.
+    CASE TRIM(e.encounter_type)
+        WHEN 'Outpatient' THEN 'Outpatient'
+        WHEN 'Inpatient'  THEN 'Inpatient'
+        WHEN 'ER'         THEN 'ER'
+        ELSE 'Unknown'
+    END,
+    -- GUARD B5: same treatment for claim_status.
+    CASE TRIM(COALESCE(bl.claim_status, 'No Claim'))
+        WHEN 'Paid'     THEN 'Paid'
+        WHEN 'Pending'  THEN 'Pending'
+        WHEN 'Denied'   THEN 'Denied'
+        WHEN 'No Claim' THEN 'No Claim'
+        ELSE 'Unknown'
+    END,
 
     CAST(DATE_FORMAT(e.encounter_date, '%Y%m%d') AS UNSIGNED),
     CASE WHEN e.discharge_date IS NULL THEN NULL
@@ -444,8 +462,8 @@ COMMIT;
 -- results. Q2 then reads 1,200 rows instead of building 2.06M.
 --
 -- total_allowed is ALLOCATED, not summed. Summing allowed_amount across
--- pair rows is precisely the fan trap that reported $6,276.6M against a
--- true $845.8M. Dividing each encounter's revenue by its own pair count
+-- pair rows is precisely the fan trap that reported $5,752.3M against a
+-- true $838.7M. Dividing each encounter's revenue by its own pair count
 -- means the column totals back to real revenue instead of a multiple of
 -- it. This is the "weighting factor" technique from design_decisions.txt,
 -- applied to the aggregate rather than the bridge.

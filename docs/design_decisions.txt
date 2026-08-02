@@ -25,7 +25,7 @@ WHY
 
 The evidence is Q2. Joining the two junction tables produced 2,060,000
 intermediate rows from 300,000 encounters, and summing money in that shape
-reported $6,276.6M against a true $845.8M -- a 7.4x overstatement with no
+reported $5,752.3M against a true $838.7M -- a 6.9x overstatement with no
 error raised.
 
 Options B and C bake that defect permanently into the warehouse:
@@ -71,7 +71,7 @@ dim_date  (~1,100 rows, one-time load, covers 2023-01-01 .. 2025-12-31)
   date_key INT PK        -- YYYYMMDD, e.g. 20240612. Human-readable and
                             sorts correctly as an integer.
   full_date, year, quarter, month, month_name, month_abbr,
-  year_month ('2024-06'), day_of_month, day_of_week, day_name,
+  calendar_month ('2024-06'), day_of_month, day_of_week, day_name,
   is_weekend, week_of_year, day_of_year
 
   WHY IT EXISTS AT ALL, when encounters already has a DATETIME:
@@ -270,7 +270,7 @@ table, and there are only two ways to do that, both bad:
       star schema licenses you to abandon.
 
   (b) Change the grain to diagnosis level -- which is Decision 1's Option
-      B, and reintroduces the exact 7.4x revenue inflation measured in Q2.
+      B, and reintroduces the exact 6.9x revenue inflation measured in Q2.
 
 A bridge keeps the many-to-many where it belongs: outside the fact table,
 at its own grain, joined only by queries that actually need codes.
@@ -289,7 +289,7 @@ What bridges DO buy:
     join dragged VARCHAR(200) descriptions through the sort. Sorting 2M
     narrow rows is far cheaper than sorting 2M wide ones.
   - No measure is reachable. Money lives on the fact table, which the
-    bridge-to-bridge join does not include. The 7.4x inflation is
+    bridge-to-bridge join does not include. The 6.9x inflation is
     structurally unreachable rather than merely discouraged.
 
 That last point is the strongest argument. A schema where the wrong answer

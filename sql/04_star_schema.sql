@@ -251,7 +251,7 @@ CREATE TABLE fact_encounters (
 -- procedures inherently produces pairs -- but:
 --   * the fan is opt-in; Q1/Q3/Q4 never touch a bridge
 --   * bridge rows are 3-4 integers, not VARCHAR(200) descriptions
---   * NO MEASURE IS REACHABLE from a bridge-to-bridge join, so the 7.4x
+--   * NO MEASURE IS REACHABLE from a bridge-to-bridge join, so the 6.9x
 --     revenue inflation measured in Q2 is structurally impossible rather
 --     than merely discouraged
 -- =====================================================================
