@@ -1,0 +1,1006 @@
++---------+-------------------+----------------+------------+-----------------+
+| month   | specialty_name    | encounter_type | encounters | unique_patients |
++---------+-------------------+----------------+------------+-----------------+
+| 2023-01 | Cardiology        | ER             |        384 |             252 |
+| 2023-01 | Cardiology        | Inpatient      |        220 |             145 |
+| 2023-01 | Cardiology        | Outpatient     |        434 |             284 |
+| 2023-01 | Emergency         | Inpatient      |        385 |             253 |
+| 2023-01 | Emergency         | Outpatient     |        654 |             429 |
+| 2023-01 | Endocrinology     | ER             |        312 |             206 |
+| 2023-01 | Endocrinology     | Outpatient     |        727 |             475 |
+| 2023-01 | Family Medicine   | ER             |        332 |             219 |
+| 2023-01 | Family Medicine   | Outpatient     |        711 |             465 |
+| 2023-01 | Gastroenterology  | ER             |        384 |             253 |
+| 2023-01 | Gastroenterology  | Outpatient     |        654 |             428 |
+| 2023-01 | Internal Medicine | ER             |        152 |             100 |
+| 2023-01 | Internal Medicine | Inpatient      |        174 |             114 |
+| 2023-01 | Internal Medicine | Outpatient     |        771 |             507 |
+| 2023-01 | Nephrology        | ER             |        155 |             102 |
+| 2023-01 | Nephrology        | Outpatient     |        939 |             621 |
+| 2023-01 | Neurology         | ER             |        130 |              86 |
+| 2023-01 | Neurology         | Outpatient     |        954 |             627 |
+| 2023-01 | Oncology          | ER             |        135 |              88 |
+| 2023-01 | Oncology          | Inpatient      |        377 |             247 |
+| 2023-01 | Oncology          | Outpatient     |        577 |             379 |
+| 2023-01 | Orthopedics       | Inpatient      |        112 |              74 |
+| 2023-01 | Orthopedics       | Outpatient     |        956 |             628 |
+| 2023-01 | Psychiatry        | ER             |        336 |             221 |
+| 2023-01 | Psychiatry        | Outpatient     |        711 |             468 |
+| 2023-01 | Pulmonology       | ER             |        358 |             235 |
+| 2023-01 | Pulmonology       | Outpatient     |        711 |             467 |
+| 2023-02 | Cardiology        | ER             |        168 |             111 |
+| 2023-02 | Cardiology        | Outpatient     |        812 |             535 |
+| 2023-02 | Emergency         | ER             |        372 |             245 |
+| 2023-02 | Emergency         | Outpatient     |        637 |             420 |
+| 2023-02 | Endocrinology     | ER             |        211 |             139 |
+| 2023-02 | Endocrinology     | Inpatient      |         51 |              34 |
+| 2023-02 | Endocrinology     | Outpatient     |        700 |             461 |
+| 2023-02 | Family Medicine   | ER             |         52 |              35 |
+| 2023-02 | Family Medicine   | Outpatient     |        885 |             583 |
+| 2023-02 | Gastroenterology  | Inpatient      |        149 |              98 |
+| 2023-02 | Gastroenterology  | Outpatient     |        849 |             561 |
+| 2023-02 | Internal Medicine | ER             |        233 |             154 |
+| 2023-02 | Internal Medicine | Outpatient     |        683 |             449 |
+| 2023-02 | Nephrology        | Inpatient      |        383 |             253 |
+| 2023-02 | Nephrology        | Outpatient     |        551 |             362 |
+| 2023-02 | Neurology         | ER             |        252 |             168 |
+| 2023-02 | Neurology         | Outpatient     |        655 |             432 |
+| 2023-02 | Oncology          | ER             |        383 |             253 |
+| 2023-02 | Oncology          | Outpatient     |        573 |             378 |
+| 2023-02 | Orthopedics       | Inpatient      |        274 |             180 |
+| 2023-02 | Orthopedics       | Outpatient     |        646 |             425 |
+| 2023-02 | Psychiatry        | ER             |        350 |             231 |
+| 2023-02 | Psychiatry        | Outpatient     |        646 |             425 |
+| 2023-02 | Pulmonology       | ER             |        210 |             138 |
+| 2023-02 | Pulmonology       | Inpatient      |        332 |             219 |
+| 2023-02 | Pulmonology       | Outpatient     |        435 |             287 |
+| 2023-03 | Cardiology        | ER             |        214 |             141 |
+| 2023-03 | Cardiology        | Outpatient     |        852 |             558 |
+| 2023-03 | Emergency         | ER             |         85 |              55 |
+| 2023-03 | Emergency         | Outpatient     |        955 |             625 |
+| 2023-03 | Endocrinology     | ER             |        195 |             127 |
+| 2023-03 | Endocrinology     | Inpatient      |        196 |             129 |
+| 2023-03 | Endocrinology     | Outpatient     |        694 |             454 |
+| 2023-03 | Family Medicine   | ER             |        309 |             203 |
+| 2023-03 | Family Medicine   | Inpatient      |         75 |              49 |
+| 2023-03 | Family Medicine   | Outpatient     |        711 |             467 |
+| 2023-03 | Gastroenterology  | ER             |         91 |              60 |
+| 2023-03 | Gastroenterology  | Inpatient      |        235 |             154 |
+| 2023-03 | Gastroenterology  | Outpatient     |        721 |             471 |
+| 2023-03 | Internal Medicine | ER             |        384 |             252 |
+| 2023-03 | Internal Medicine | Outpatient     |        686 |             449 |
+| 2023-03 | Nephrology        | ER             |        385 |             252 |
+| 2023-03 | Nephrology        | Outpatient     |        663 |             434 |
+| 2023-03 | Neurology         | Inpatient      |        383 |             252 |
+| 2023-03 | Neurology         | Outpatient     |        702 |             460 |
+| 2023-03 | Oncology          | Inpatient      |        253 |             166 |
+| 2023-03 | Oncology          | Outpatient     |        786 |             515 |
+| 2023-03 | Orthopedics       | ER             |        386 |             252 |
+| 2023-03 | Orthopedics       | Outpatient     |        711 |             465 |
+| 2023-03 | Psychiatry        | ER             |        174 |             115 |
+| 2023-03 | Psychiatry        | Inpatient      |         50 |              33 |
+| 2023-03 | Psychiatry        | Outpatient     |        815 |             533 |
+| 2023-03 | Pulmonology       | ER             |        273 |             179 |
+| 2023-03 | Pulmonology       | Inpatient      |         54 |              35 |
+| 2023-03 | Pulmonology       | Outpatient     |        712 |             466 |
+| 2023-04 | Cardiology        | Inpatient      |        382 |             253 |
+| 2023-04 | Cardiology        | Outpatient     |        607 |             401 |
+| 2023-04 | Emergency         | ER             |        312 |             205 |
+| 2023-04 | Emergency         | Outpatient     |        687 |             452 |
+| 2023-04 | Endocrinology     | ER             |        385 |             252 |
+| 2023-04 | Endocrinology     | Outpatient     |        613 |             403 |
+| 2023-04 | Family Medicine   | ER             |        385 |             253 |
+| 2023-04 | Family Medicine   | Inpatient      |        174 |             114 |
+| 2023-04 | Family Medicine   | Outpatient     |        443 |             292 |
+| 2023-04 | Gastroenterology  | ER             |        294 |             192 |
+| 2023-04 | Gastroenterology  | Outpatient     |        702 |             461 |
+| 2023-04 | Internal Medicine | Inpatient      |        133 |              87 |
+| 2023-04 | Internal Medicine | Outpatient     |        932 |             613 |
+| 2023-04 | Nephrology        | ER             |        154 |             102 |
+| 2023-04 | Nephrology        | Outpatient     |        922 |             607 |
+| 2023-04 | Neurology         | ER             |        355 |             234 |
+| 2023-04 | Neurology         | Outpatient     |        688 |             452 |
+| 2023-04 | Oncology          | ER             |        172 |             113 |
+| 2023-04 | Oncology          | Inpatient      |        131 |              86 |
+| 2023-04 | Oncology          | Outpatient     |        757 |             499 |
+| 2023-04 | Orthopedics       | ER             |        286 |             189 |
+| 2023-04 | Orthopedics       | Inpatient      |         47 |              32 |
+| 2023-04 | Orthopedics       | Outpatient     |        691 |             455 |
+| 2023-04 | Psychiatry        | ER             |         92 |              60 |
+| 2023-04 | Psychiatry        | Inpatient      |        333 |             219 |
+| 2023-04 | Psychiatry        | Outpatient     |        598 |             394 |
+| 2023-04 | Pulmonology       | ER             |        111 |              73 |
+| 2023-04 | Pulmonology       | Outpatient     |        934 |             613 |
+| 2023-05 | Cardiology        | ER             |        384 |             253 |
+| 2023-05 | Cardiology        | Outpatient     |        679 |             448 |
+| 2023-05 | Emergency         | ER             |        258 |             169 |
+| 2023-05 | Emergency         | Inpatient      |        384 |             253 |
+| 2023-05 | Emergency         | Outpatient     |        454 |             300 |
+| 2023-05 | Endocrinology     | Inpatient      |        237 |             156 |
+| 2023-05 | Endocrinology     | Outpatient     |        809 |             533 |
+| 2023-05 | Family Medicine   | ER             |        256 |             169 |
+| 2023-05 | Family Medicine   | Outpatient     |        781 |             514 |
+| 2023-05 | Gastroenterology  | ER             |        386 |             253 |
+| 2023-05 | Gastroenterology  | Outpatient     |        699 |             459 |
+| 2023-05 | Internal Medicine | ER             |         75 |              49 |
+| 2023-05 | Internal Medicine | Inpatient      |        250 |             166 |
+| 2023-05 | Internal Medicine | Outpatient     |        713 |             470 |
+| 2023-05 | Nephrology        | ER             |        231 |             151 |
+| 2023-05 | Nephrology        | Outpatient     |        817 |             538 |
+| 2023-05 | Neurology         | ER             |         83 |              55 |
+| 2023-05 | Neurology         | Outpatient     |        958 |             630 |
+| 2023-05 | Oncology          | ER             |        213 |             140 |
+| 2023-05 | Oncology          | Outpatient     |        860 |             566 |
+| 2023-05 | Orthopedics       | ER             |        276 |             181 |
+| 2023-05 | Orthopedics       | Inpatient      |         84 |              54 |
+| 2023-05 | Orthopedics       | Outpatient     |        677 |             445 |
+| 2023-05 | Psychiatry        | ER             |        388 |             255 |
+| 2023-05 | Psychiatry        | Outpatient     |        713 |             467 |
+| 2023-05 | Pulmonology       | Inpatient      |        382 |             254 |
+| 2023-05 | Pulmonology       | Outpatient     |        703 |             462 |
+| 2023-06 | Cardiology        | ER             |        136 |              89 |
+| 2023-06 | Cardiology        | Outpatient     |        930 |             611 |
+| 2023-06 | Emergency         | ER             |        338 |             222 |
+| 2023-06 | Emergency         | Outpatient     |        685 |             451 |
+| 2023-06 | Endocrinology     | ER             |        158 |             103 |
+| 2023-06 | Endocrinology     | Inpatient      |        147 |              97 |
+| 2023-06 | Endocrinology     | Outpatient     |        769 |             505 |
+| 2023-06 | Family Medicine   | ER             |        128 |              84 |
+| 2023-06 | Family Medicine   | Outpatient     |        932 |             611 |
+| 2023-06 | Gastroenterology  | ER             |        253 |             165 |
+| 2023-06 | Gastroenterology  | Inpatient      |        117 |              77 |
+| 2023-06 | Gastroenterology  | Outpatient     |        681 |             446 |
+| 2023-06 | Internal Medicine | ER             |        311 |             203 |
+| 2023-06 | Internal Medicine | Outpatient     |        689 |             452 |
+| 2023-06 | Nephrology        | Inpatient      |        384 |             252 |
+| 2023-06 | Nephrology        | Outpatient     |        609 |             401 |
+| 2023-06 | Neurology         | ER             |        211 |             138 |
+| 2023-06 | Neurology         | Inpatient      |        119 |              78 |
+| 2023-06 | Neurology         | Outpatient     |        688 |             451 |
+| 2023-06 | Oncology          | ER             |        385 |             252 |
+| 2023-06 | Oncology          | Outpatient     |        606 |             399 |
+| 2023-06 | Orthopedics       | ER             |        108 |              72 |
+| 2023-06 | Orthopedics       | Inpatient      |        118 |              78 |
+| 2023-06 | Orthopedics       | Outpatient     |        814 |             533 |
+| 2023-06 | Psychiatry        | Inpatient      |        319 |             209 |
+| 2023-06 | Psychiatry        | Outpatient     |        689 |             451 |
+| 2023-06 | Pulmonology       | ER             |        385 |             252 |
+| 2023-06 | Pulmonology       | Outpatient     |        610 |             401 |
+| 2023-07 | Cardiology        | ER             |        249 |             163 |
+| 2023-07 | Cardiology        | Outpatient     |        792 |             519 |
+| 2023-07 | Emergency         | ER             |         47 |              30 |
+| 2023-07 | Emergency         | Inpatient      |         37 |              25 |
+| 2023-07 | Emergency         | Outpatient     |        950 |             626 |
+| 2023-07 | Endocrinology     | ER             |        228 |             149 |
+| 2023-07 | Endocrinology     | Outpatient     |        822 |             543 |
+| 2023-07 | Family Medicine   | Inpatient      |        385 |             253 |
+| 2023-07 | Family Medicine   | Outpatient     |        690 |             453 |
+| 2023-07 | Gastroenterology  | ER             |         84 |              55 |
+| 2023-07 | Gastroenterology  | Inpatient      |        268 |             175 |
+| 2023-07 | Gastroenterology  | Outpatient     |        685 |             450 |
+| 2023-07 | Internal Medicine | ER             |        242 |             159 |
+| 2023-07 | Internal Medicine | Inpatient      |        144 |              95 |
+| 2023-07 | Internal Medicine | Outpatient     |        712 |             468 |
+| 2023-07 | Nephrology        | ER             |        385 |             253 |
+| 2023-07 | Nephrology        | Outpatient     |        696 |             458 |
+| 2023-07 | Neurology         | ER             |        385 |             252 |
+| 2023-07 | Neurology         | Inpatient      |        130 |              85 |
+| 2023-07 | Neurology         | Outpatient     |        581 |             382 |
+| 2023-07 | Oncology          | Inpatient      |        220 |             145 |
+| 2023-07 | Oncology          | Outpatient     |        843 |             553 |
+| 2023-07 | Orthopedics       | ER             |        385 |             252 |
+| 2023-07 | Orthopedics       | Outpatient     |        708 |             465 |
+| 2023-07 | Psychiatry        | ER             |        262 |             173 |
+| 2023-07 | Psychiatry        | Inpatient      |         68 |              44 |
+| 2023-07 | Psychiatry        | Outpatient     |        715 |             468 |
+| 2023-07 | Pulmonology       | ER             |        239 |             158 |
+| 2023-07 | Pulmonology       | Outpatient     |        798 |             524 |
+| 2023-08 | Cardiology        | ER             |        300 |             199 |
+| 2023-08 | Cardiology        | Inpatient      |        384 |             253 |
+| 2023-08 | Cardiology        | Outpatient     |        349 |             230 |
+| 2023-08 | Emergency         | Inpatient      |        347 |             227 |
+| 2023-08 | Emergency         | Outpatient     |        714 |             469 |
+| 2023-08 | Endocrinology     | ER             |        386 |             253 |
+| 2023-08 | Endocrinology     | Outpatient     |        656 |             432 |
+| 2023-08 | Family Medicine   | ER             |        385 |             254 |
+| 2023-08 | Family Medicine   | Outpatient     |        651 |             428 |
+| 2023-08 | Gastroenterology  | ER             |        326 |             215 |
+| 2023-08 | Gastroenterology  | Outpatient     |        712 |             469 |
+| 2023-08 | Internal Medicine | ER             |        366 |             240 |
+| 2023-08 | Internal Medicine | Inpatient      |        106 |              69 |
+| 2023-08 | Internal Medicine | Outpatient     |        605 |             398 |
+| 2023-08 | Nephrology        | ER             |        141 |              94 |
+| 2023-08 | Nephrology        | Outpatient     |        950 |             627 |
+| 2023-08 | Neurology         | ER             |        344 |             226 |
+| 2023-08 | Neurology         | Outpatient     |        711 |             470 |
+| 2023-08 | Oncology          | ER             |        162 |             106 |
+| 2023-08 | Oncology          | Inpatient      |        165 |             109 |
+| 2023-08 | Oncology          | Outpatient     |        771 |             506 |
+| 2023-08 | Orthopedics       | Inpatient      |        324 |             213 |
+| 2023-08 | Orthopedics       | Outpatient     |        712 |             472 |
+| 2023-08 | Psychiatry        | ER             |        123 |              81 |
+| 2023-08 | Psychiatry        | Outpatient     |        953 |             628 |
+| 2023-08 | Pulmonology       | ER             |        145 |              96 |
+| 2023-08 | Pulmonology       | Outpatient     |        949 |             625 |
+| 2023-09 | Cardiology        | ER             |        385 |             252 |
+| 2023-09 | Cardiology        | Outpatient     |        671 |             439 |
+| 2023-09 | Emergency         | ER             |        385 |             253 |
+| 2023-09 | Emergency         | Outpatient     |        688 |             451 |
+| 2023-09 | Endocrinology     | ER             |        323 |             212 |
+| 2023-09 | Endocrinology     | Inpatient      |        203 |             133 |
+| 2023-09 | Endocrinology     | Outpatient     |        504 |             331 |
+| 2023-09 | Family Medicine   | ER             |        225 |             147 |
+| 2023-09 | Family Medicine   | Outpatient     |        789 |             519 |
+| 2023-09 | Gastroenterology  | Inpatient      |        385 |             252 |
+| 2023-09 | Gastroenterology  | Outpatient     |        689 |             452 |
+| 2023-09 | Internal Medicine | ER             |         64 |              42 |
+| 2023-09 | Internal Medicine | Outpatient     |        933 |             611 |
+| 2023-09 | Nephrology        | ER             |        140 |              91 |
+| 2023-09 | Nephrology        | Inpatient      |        165 |             108 |
+| 2023-09 | Nephrology        | Outpatient     |        689 |             452 |
+| 2023-09 | Neurology         | ER             |         41 |              27 |
+| 2023-09 | Neurology         | Inpatient      |         21 |              14 |
+| 2023-09 | Neurology         | Outpatient     |        929 |             611 |
+| 2023-09 | Oncology          | ER             |        223 |             146 |
+| 2023-09 | Oncology          | Outpatient     |        794 |             519 |
+| 2023-09 | Orthopedics       | ER             |        243 |             159 |
+| 2023-09 | Orthopedics       | Inpatient      |         61 |              40 |
+| 2023-09 | Orthopedics       | Outpatient     |        692 |             452 |
+| 2023-09 | Psychiatry        | ER             |        386 |             252 |
+| 2023-09 | Psychiatry        | Outpatient     |        671 |             440 |
+| 2023-09 | Pulmonology       | Inpatient      |        385 |             252 |
+| 2023-09 | Pulmonology       | Outpatient     |        648 |             426 |
+| 2023-10 | Cardiology        | Inpatient      |        126 |              82 |
+| 2023-10 | Cardiology        | Outpatient     |        952 |             626 |
+| 2023-10 | Emergency         | ER             |        328 |             216 |
+| 2023-10 | Emergency         | Outpatient     |        712 |             468 |
+| 2023-10 | Endocrinology     | ER             |        146 |              95 |
+| 2023-10 | Endocrinology     | Inpatient      |        183 |             119 |
+| 2023-10 | Endocrinology     | Outpatient     |        769 |             505 |
+| 2023-10 | Family Medicine   | ER             |        286 |             189 |
+| 2023-10 | Family Medicine   | Outpatient     |        808 |             532 |
+| 2023-10 | Gastroenterology  | ER             |        347 |             229 |
+| 2023-10 | Gastroenterology  | Outpatient     |        711 |             468 |
+| 2023-10 | Internal Medicine | ER             |        342 |             224 |
+| 2023-10 | Internal Medicine | Outpatient     |        712 |             468 |
+| 2023-10 | Nephrology        | ER             |        322 |             212 |
+| 2023-10 | Nephrology        | Inpatient      |         83 |              55 |
+| 2023-10 | Nephrology        | Outpatient     |        633 |             416 |
+| 2023-10 | Neurology         | Inpatient      |        363 |             238 |
+| 2023-10 | Neurology         | Outpatient     |        709 |             467 |
+| 2023-10 | Oncology          | ER             |        196 |             130 |
+| 2023-10 | Oncology          | Inpatient      |        188 |             123 |
+| 2023-10 | Oncology          | Outpatient     |        649 |             427 |
+| 2023-10 | Orthopedics       | ER             |        141 |              93 |
+| 2023-10 | Orthopedics       | Outpatient     |        958 |             629 |
+| 2023-10 | Psychiatry        | Inpatient      |        307 |             202 |
+| 2023-10 | Psychiatry        | Outpatient     |        727 |             479 |
+| 2023-10 | Pulmonology       | ER             |        386 |             253 |
+| 2023-10 | Pulmonology       | Outpatient     |        652 |             429 |
+| 2023-11 | Cardiology        | ER             |         46 |              30 |
+| 2023-11 | Cardiology        | Inpatient      |        259 |             172 |
+| 2023-11 | Cardiology        | Outpatient     |        688 |             454 |
+| 2023-11 | Emergency         | ER             |         59 |              38 |
+| 2023-11 | Emergency         | Inpatient      |          5 |               3 |
+| 2023-11 | Emergency         | Outpatient     |        931 |             614 |
+| 2023-11 | Endocrinology     | ER             |        240 |             158 |
+| 2023-11 | Endocrinology     | Outpatient     |        761 |             500 |
+| 2023-11 | Family Medicine   | ER             |        219 |             144 |
+| 2023-11 | Family Medicine   | Inpatient      |        385 |             254 |
+| 2023-11 | Family Medicine   | Outpatient     |        415 |             273 |
+| 2023-11 | Gastroenterology  | ER             |         61 |              41 |
+| 2023-11 | Gastroenterology  | Outpatient     |        934 |             612 |
+| 2023-11 | Internal Medicine | Inpatient      |        386 |             253 |
+| 2023-11 | Internal Medicine | Outpatient     |        688 |             454 |
+| 2023-11 | Nephrology        | ER             |        384 |             253 |
+| 2023-11 | Nephrology        | Outpatient     |        686 |             451 |
+| 2023-11 | Neurology         | ER             |        383 |             254 |
+| 2023-11 | Neurology         | Outpatient     |        676 |             446 |
+| 2023-11 | Oncology          | ER             |        383 |             253 |
+| 2023-11 | Oncology          | Inpatient      |         62 |              40 |
+| 2023-11 | Oncology          | Outpatient     |        607 |             399 |
+| 2023-11 | Orthopedics       | ER             |        384 |             254 |
+| 2023-11 | Orthopedics       | Outpatient     |        652 |             429 |
+| 2023-11 | Psychiatry        | ER             |        227 |             150 |
+| 2023-11 | Psychiatry        | Inpatient      |         79 |              51 |
+| 2023-11 | Psychiatry        | Outpatient     |        704 |             464 |
+| 2023-11 | Pulmonology       | ER             |        175 |             115 |
+| 2023-11 | Pulmonology       | Inpatient      |         32 |              21 |
+| 2023-11 | Pulmonology       | Outpatient     |        824 |             542 |
+| 2023-12 | Cardiology        | ER             |        338 |             222 |
+| 2023-12 | Cardiology        | Outpatient     |        708 |             465 |
+| 2023-12 | Emergency         | Inpatient      |        381 |             250 |
+| 2023-12 | Emergency         | Outpatient     |        710 |             466 |
+| 2023-12 | Endocrinology     | Inpatient      |        386 |             252 |
+| 2023-12 | Endocrinology     | Outpatient     |        653 |             428 |
+| 2023-12 | Family Medicine   | ER             |        383 |             252 |
+| 2023-12 | Family Medicine   | Outpatient     |        651 |             428 |
+| 2023-12 | Gastroenterology  | ER             |        359 |             236 |
+| 2023-12 | Gastroenterology  | Outpatient     |        714 |             468 |
+| 2023-12 | Internal Medicine | ER             |        329 |             217 |
+| 2023-12 | Internal Medicine | Outpatient     |        711 |             467 |
+| 2023-12 | Nephrology        | Inpatient      |        108 |              71 |
+| 2023-12 | Nephrology        | Outpatient     |        956 |             626 |
+| 2023-12 | Neurology         | ER             |        312 |             203 |
+| 2023-12 | Neurology         | Outpatient     |        722 |             475 |
+| 2023-12 | Oncology          | ER             |        128 |              84 |
+| 2023-12 | Oncology          | Outpatient     |        954 |             624 |
+| 2023-12 | Orthopedics       | ER             |        367 |             241 |
+| 2023-12 | Orthopedics       | Inpatient      |        290 |             190 |
+| 2023-12 | Orthopedics       | Outpatient     |        382 |             250 |
+| 2023-12 | Psychiatry        | ER             |        157 |             103 |
+| 2023-12 | Psychiatry        | Outpatient     |        937 |             614 |
+| 2023-12 | Pulmonology       | ER             |        149 |              98 |
+| 2023-12 | Pulmonology       | Inpatient      |        178 |             117 |
+| 2023-12 | Pulmonology       | Outpatient     |        769 |             504 |
+| 2024-01 | Cardiology        | ER             |        383 |             253 |
+| 2024-01 | Cardiology        | Outpatient     |        713 |             467 |
+| 2024-01 | Emergency         | ER             |        382 |             253 |
+| 2024-01 | Emergency         | Outpatient     |        700 |             462 |
+| 2024-01 | Endocrinology     | ER             |        385 |             254 |
+| 2024-01 | Endocrinology     | Outpatient     |        702 |             461 |
+| 2024-01 | Family Medicine   | Inpatient      |        212 |             140 |
+| 2024-01 | Family Medicine   | Outpatient     |        857 |             564 |
+| 2024-01 | Gastroenterology  | ER             |          8 |               5 |
+| 2024-01 | Gastroenterology  | Inpatient      |        384 |             254 |
+| 2024-01 | Gastroenterology  | Outpatient     |        705 |             460 |
+| 2024-01 | Internal Medicine | ER             |         86 |              55 |
+| 2024-01 | Internal Medicine | Outpatient     |        954 |             628 |
+| 2024-01 | Nephrology        | ER             |         50 |              33 |
+| 2024-01 | Nephrology        | Inpatient      |        277 |             181 |
+| 2024-01 | Nephrology        | Outpatient     |        711 |             468 |
+| 2024-01 | Neurology         | ER             |        325 |             215 |
+| 2024-01 | Neurology         | Inpatient      |          9 |               6 |
+| 2024-01 | Neurology         | Outpatient     |        702 |             461 |
+| 2024-01 | Oncology          | ER             |        255 |             168 |
+| 2024-01 | Oncology          | Outpatient     |        779 |             513 |
+| 2024-01 | Orthopedics       | ER             |        231 |             153 |
+| 2024-01 | Orthopedics       | Inpatient      |         95 |              62 |
+| 2024-01 | Orthopedics       | Outpatient     |        722 |             473 |
+| 2024-01 | Psychiatry        | ER             |        151 |             100 |
+| 2024-01 | Psychiatry        | Inpatient      |        235 |             153 |
+| 2024-01 | Psychiatry        | Outpatient     |        683 |             448 |
+| 2024-01 | Pulmonology       | ER             |        236 |             154 |
+| 2024-01 | Pulmonology       | Inpatient      |         38 |              25 |
+| 2024-01 | Pulmonology       | Outpatient     |        768 |             505 |
+| 2024-02 | Cardiology        | Inpatient      |         71 |              46 |
+| 2024-02 | Cardiology        | Outpatient     |        908 |             600 |
+| 2024-02 | Emergency         | ER             |        129 |              85 |
+| 2024-02 | Emergency         | Inpatient      |        143 |              94 |
+| 2024-02 | Emergency         | Outpatient     |        679 |             448 |
+| 2024-02 | Endocrinology     | ER             |         89 |              59 |
+| 2024-02 | Endocrinology     | Outpatient     |        911 |             599 |
+| 2024-02 | Family Medicine   | ER             |        110 |              72 |
+| 2024-02 | Family Medicine   | Inpatient      |        172 |             113 |
+| 2024-02 | Family Medicine   | Outpatient     |        739 |             486 |
+| 2024-02 | Gastroenterology  | ER             |        291 |             192 |
+| 2024-02 | Gastroenterology  | Outpatient     |        668 |             439 |
+| 2024-02 | Internal Medicine | ER             |        353 |             234 |
+| 2024-02 | Internal Medicine | Outpatient     |        667 |             438 |
+| 2024-02 | Nephrology        | ER             |        336 |             221 |
+| 2024-02 | Nephrology        | Outpatient     |        668 |             440 |
+| 2024-02 | Neurology         | ER             |        134 |              88 |
+| 2024-02 | Neurology         | Inpatient      |        376 |             247 |
+| 2024-02 | Neurology         | Outpatient     |        535 |             352 |
+| 2024-02 | Oncology          | Inpatient      |        384 |             253 |
+| 2024-02 | Oncology          | Outpatient     |        601 |             394 |
+| 2024-02 | Orthopedics       | ER             |        152 |             101 |
+| 2024-02 | Orthopedics       | Outpatient     |        889 |             584 |
+| 2024-02 | Psychiatry        | ER             |        385 |             253 |
+| 2024-02 | Psychiatry        | Inpatient      |         16 |              10 |
+| 2024-02 | Psychiatry        | Outpatient     |        550 |             362 |
+| 2024-02 | Pulmonology       | ER             |        384 |             253 |
+| 2024-02 | Pulmonology       | Outpatient     |        578 |             382 |
+| 2024-03 | Cardiology        | ER             |         40 |              26 |
+| 2024-03 | Cardiology        | Inpatient      |        315 |             206 |
+| 2024-03 | Cardiology        | Outpatient     |        679 |             446 |
+| 2024-03 | Emergency         | ER             |        215 |             140 |
+| 2024-03 | Emergency         | Inpatient      |        111 |              73 |
+| 2024-03 | Emergency         | Outpatient     |        738 |             484 |
+| 2024-03 | Endocrinology     | ER             |        295 |             193 |
+| 2024-03 | Endocrinology     | Outpatient     |        745 |             487 |
+| 2024-03 | Family Medicine   | ER             |        274 |             180 |
+| 2024-03 | Family Medicine   | Outpatient     |        768 |             502 |
+| 2024-03 | Gastroenterology  | ER             |         94 |              61 |
+| 2024-03 | Gastroenterology  | Outpatient     |        955 |             627 |
+| 2024-03 | Internal Medicine | ER             |        385 |             252 |
+| 2024-03 | Internal Medicine | Inpatient      |        356 |             233 |
+| 2024-03 | Internal Medicine | Outpatient     |        327 |             214 |
+| 2024-03 | Nephrology        | ER             |        375 |             247 |
+| 2024-03 | Nephrology        | Outpatient     |        710 |             466 |
+| 2024-03 | Neurology         | ER             |        385 |             252 |
+| 2024-03 | Neurology         | Outpatient     |        664 |             434 |
+| 2024-03 | Oncology          | ER             |        386 |             252 |
+| 2024-03 | Oncology          | Outpatient     |        714 |             468 |
+| 2024-03 | Orthopedics       | Inpatient      |        383 |             252 |
+| 2024-03 | Orthopedics       | Outpatient     |        654 |             427 |
+| 2024-03 | Psychiatry        | ER             |        194 |             127 |
+| 2024-03 | Psychiatry        | Outpatient     |        894 |             585 |
+| 2024-03 | Pulmonology       | Inpatient      |        174 |             114 |
+| 2024-03 | Pulmonology       | Outpatient     |        920 |             604 |
+| 2024-04 | Cardiology        | ER             |        374 |             245 |
+| 2024-04 | Cardiology        | Outpatient     |        691 |             455 |
+| 2024-04 | Emergency         | ER             |        170 |             112 |
+| 2024-04 | Emergency         | Outpatient     |        897 |             590 |
+| 2024-04 | Endocrinology     | ER             |         52 |              34 |
+| 2024-04 | Endocrinology     | Inpatient      |        384 |             253 |
+| 2024-04 | Endocrinology     | Outpatient     |        603 |             398 |
+| 2024-04 | Family Medicine   | ER             |        384 |             253 |
+| 2024-04 | Family Medicine   | Outpatient     |        635 |             418 |
+| 2024-04 | Gastroenterology  | ER             |        107 |              70 |
+| 2024-04 | Gastroenterology  | Inpatient      |        278 |             184 |
+| 2024-04 | Gastroenterology  | Outpatient     |        688 |             454 |
+| 2024-04 | Internal Medicine | ER             |        277 |             182 |
+| 2024-04 | Internal Medicine | Inpatient      |         23 |              15 |
+| 2024-04 | Internal Medicine | Outpatient     |        697 |             457 |
+| 2024-04 | Nephrology        | ER             |        303 |             200 |
+| 2024-04 | Nephrology        | Inpatient      |         53 |              35 |
+| 2024-04 | Nephrology        | Outpatient     |        637 |             418 |
+| 2024-04 | Neurology         | Inpatient      |        253 |             167 |
+| 2024-04 | Neurology         | Outpatient     |        734 |             484 |
+| 2024-04 | Oncology          | ER             |         73 |              49 |
+| 2024-04 | Oncology          | Outpatient     |        933 |             612 |
+| 2024-04 | Orthopedics       | ER             |        386 |             253 |
+| 2024-04 | Orthopedics       | Outpatient     |        619 |             406 |
+| 2024-04 | Psychiatry        | ER             |        192 |             125 |
+| 2024-04 | Psychiatry        | Outpatient     |        856 |             563 |
+| 2024-04 | Pulmonology       | ER             |         93 |              61 |
+| 2024-04 | Pulmonology       | Inpatient      |        209 |             138 |
+| 2024-04 | Pulmonology       | Outpatient     |        718 |             474 |
+| 2024-05 | Cardiology        | ER             |         85 |              55 |
+| 2024-05 | Cardiology        | Inpatient      |        274 |             181 |
+| 2024-05 | Cardiology        | Outpatient     |        711 |             468 |
+| 2024-05 | Emergency         | ER             |        384 |             254 |
+| 2024-05 | Emergency         | Outpatient     |        654 |             428 |
+| 2024-05 | Endocrinology     | ER             |        381 |             250 |
+| 2024-05 | Endocrinology     | Outpatient     |        712 |             469 |
+| 2024-05 | Family Medicine   | ER             |         72 |              48 |
+| 2024-05 | Family Medicine   | Inpatient      |        156 |             104 |
+| 2024-05 | Family Medicine   | Outpatient     |        866 |             569 |
+| 2024-05 | Gastroenterology  | ER             |        386 |             253 |
+| 2024-05 | Gastroenterology  | Outpatient     |        666 |             439 |
+| 2024-05 | Internal Medicine | ER             |        108 |              71 |
+| 2024-05 | Internal Medicine | Outpatient     |        954 |             627 |
+| 2024-05 | Nephrology        | ER             |         88 |              58 |
+| 2024-05 | Nephrology        | Inpatient      |        301 |             200 |
+| 2024-05 | Nephrology        | Outpatient     |        652 |             429 |
+| 2024-05 | Neurology         | ER             |        199 |             130 |
+| 2024-05 | Neurology         | Inpatient      |        131 |              85 |
+| 2024-05 | Neurology         | Outpatient     |        755 |             499 |
+| 2024-05 | Oncology          | ER             |        328 |             216 |
+| 2024-05 | Oncology          | Outpatient     |        712 |             468 |
+| 2024-05 | Orthopedics       | ER             |        179 |             116 |
+| 2024-05 | Orthopedics       | Outpatient     |        919 |             605 |
+| 2024-05 | Psychiatry        | Inpatient      |        383 |             254 |
+| 2024-05 | Psychiatry        | Outpatient     |        654 |             430 |
+| 2024-05 | Pulmonology       | ER             |        291 |             193 |
+| 2024-05 | Pulmonology       | Outpatient     |        748 |             492 |
+| 2024-06 | Cardiology        | ER             |        279 |             183 |
+| 2024-06 | Cardiology        | Inpatient      |         26 |              17 |
+| 2024-06 | Cardiology        | Outpatient     |        687 |             452 |
+| 2024-06 | Emergency         | Inpatient      |        239 |             157 |
+| 2024-06 | Emergency         | Outpatient     |        759 |             497 |
+| 2024-06 | Endocrinology     | ER             |         61 |              40 |
+| 2024-06 | Endocrinology     | Outpatient     |        932 |             610 |
+| 2024-06 | Family Medicine   | ER             |         78 |              51 |
+| 2024-06 | Family Medicine   | Inpatient      |        226 |             149 |
+| 2024-06 | Family Medicine   | Outpatient     |        705 |             462 |
+| 2024-06 | Gastroenterology  | ER             |        260 |             170 |
+| 2024-06 | Gastroenterology  | Outpatient     |        734 |             482 |
+| 2024-06 | Internal Medicine | Inpatient      |        386 |             252 |
+| 2024-06 | Internal Medicine | Outpatient     |        689 |             451 |
+| 2024-06 | Nephrology        | ER             |        385 |             252 |
+| 2024-06 | Nephrology        | Outpatient     |        683 |             451 |
+| 2024-06 | Neurology         | ER             |        186 |             122 |
+| 2024-06 | Neurology         | Outpatient     |        861 |             565 |
+| 2024-06 | Oncology          | ER             |        371 |             243 |
+| 2024-06 | Oncology          | Inpatient      |        333 |             218 |
+| 2024-06 | Oncology          | Outpatient     |        355 |             234 |
+| 2024-06 | Orthopedics       | ER             |        207 |             136 |
+| 2024-06 | Orthopedics       | Outpatient     |        823 |             539 |
+| 2024-06 | Psychiatry        | ER             |        385 |             252 |
+| 2024-06 | Psychiatry        | Outpatient     |        629 |             414 |
+| 2024-06 | Pulmonology       | ER             |        385 |             252 |
+| 2024-06 | Pulmonology       | Outpatient     |        655 |             430 |
+| 2024-07 | Cardiology        | ER             |        106 |              69 |
+| 2024-07 | Cardiology        | Outpatient     |        953 |             627 |
+| 2024-07 | Emergency         | ER             |        181 |             120 |
+| 2024-07 | Emergency         | Inpatient      |        145 |              95 |
+| 2024-07 | Emergency         | Outpatient     |        770 |             506 |
+| 2024-07 | Endocrinology     | ER             |          4 |               3 |
+| 2024-07 | Endocrinology     | Inpatient      |        324 |             213 |
+| 2024-07 | Endocrinology     | Outpatient     |        714 |             467 |
+| 2024-07 | Family Medicine   | ER             |        306 |             201 |
+| 2024-07 | Family Medicine   | Outpatient     |        727 |             480 |
+| 2024-07 | Gastroenterology  | ER             |        126 |              82 |
+| 2024-07 | Gastroenterology  | Outpatient     |        955 |             628 |
+| 2024-07 | Internal Medicine | ER             |        385 |             252 |
+| 2024-07 | Internal Medicine | Outpatient     |        649 |             427 |
+| 2024-07 | Nephrology        | Inpatient      |        344 |             226 |
+| 2024-07 | Nephrology        | Outpatient     |        715 |             468 |
+| 2024-07 | Neurology         | ER             |        384 |             252 |
+| 2024-07 | Neurology         | Outpatient     |        652 |             429 |
+| 2024-07 | Oncology          | ER             |        365 |             240 |
+| 2024-07 | Oncology          | Outpatient     |        710 |             467 |
+| 2024-07 | Orthopedics       | ER             |         99 |              64 |
+| 2024-07 | Orthopedics       | Inpatient      |        385 |             253 |
+| 2024-07 | Orthopedics       | Outpatient     |        558 |             365 |
+| 2024-07 | Psychiatry        | ER             |        163 |             107 |
+| 2024-07 | Psychiatry        | Outpatient     |        936 |             616 |
+| 2024-07 | Pulmonology       | ER             |        383 |             253 |
+| 2024-07 | Pulmonology       | Inpatient      |        141 |              92 |
+| 2024-07 | Pulmonology       | Outpatient     |        570 |             375 |
+| 2024-08 | Cardiology        | ER             |        385 |             253 |
+| 2024-08 | Cardiology        | Outpatient     |        709 |             468 |
+| 2024-08 | Emergency         | ER             |        204 |             134 |
+| 2024-08 | Emergency         | Outpatient     |        870 |             576 |
+| 2024-08 | Endocrinology     | ER             |        384 |             254 |
+| 2024-08 | Endocrinology     | Outpatient     |        712 |             467 |
+| 2024-08 | Family Medicine   | ER             |         39 |              26 |
+| 2024-08 | Family Medicine   | Inpatient      |        346 |             227 |
+| 2024-08 | Family Medicine   | Outpatient     |        689 |             455 |
+| 2024-08 | Gastroenterology  | Inpatient      |        386 |             253 |
+| 2024-08 | Gastroenterology  | Outpatient     |        710 |             467 |
+| 2024-08 | Internal Medicine | ER             |        264 |             174 |
+| 2024-08 | Internal Medicine | Outpatient     |        773 |             509 |
+| 2024-08 | Nephrology        | ER             |        284 |             186 |
+| 2024-08 | Nephrology        | Inpatient      |         40 |              28 |
+| 2024-08 | Nephrology        | Outpatient     |        709 |             467 |
+| 2024-08 | Neurology         | ER             |        120 |              79 |
+| 2024-08 | Neurology         | Inpatient      |        244 |             160 |
+| 2024-08 | Neurology         | Outpatient     |        671 |             444 |
+| 2024-08 | Oncology          | ER             |         23 |              15 |
+| 2024-08 | Oncology          | Inpatient      |         62 |              41 |
+| 2024-08 | Oncology          | Outpatient     |        952 |             629 |
+| 2024-08 | Orthopedics       | ER             |        385 |             253 |
+| 2024-08 | Orthopedics       | Outpatient     |        673 |             443 |
+| 2024-08 | Psychiatry        | ER             |        324 |             213 |
+| 2024-08 | Psychiatry        | Outpatient     |        729 |             481 |
+| 2024-08 | Pulmonology       | ER             |         84 |              55 |
+| 2024-08 | Pulmonology       | Inpatient      |        169 |             113 |
+| 2024-08 | Pulmonology       | Outpatient     |        785 |             518 |
+| 2024-09 | Cardiology        | Inpatient      |        327 |             214 |
+| 2024-09 | Cardiology        | Outpatient     |        687 |             451 |
+| 2024-09 | Emergency         | ER             |        385 |             252 |
+| 2024-09 | Emergency         | Outpatient     |        608 |             398 |
+| 2024-09 | Endocrinology     | ER             |        347 |             227 |
+| 2024-09 | Endocrinology     | Outpatient     |        690 |             452 |
+| 2024-09 | Family Medicine   | ER             |        368 |             240 |
+| 2024-09 | Family Medicine   | Outpatient     |        689 |             452 |
+| 2024-09 | Gastroenterology  | ER             |        386 |             252 |
+| 2024-09 | Gastroenterology  | Outpatient     |        615 |             402 |
+| 2024-09 | Internal Medicine | ER             |        120 |              79 |
+| 2024-09 | Internal Medicine | Outpatient     |        933 |             611 |
+| 2024-09 | Nephrology        | ER             |        101 |              66 |
+| 2024-09 | Nephrology        | Outpatient     |        935 |             611 |
+| 2024-09 | Neurology         | ER             |        165 |             108 |
+| 2024-09 | Neurology         | Inpatient      |        141 |              92 |
+| 2024-09 | Neurology         | Outpatient     |        770 |             505 |
+| 2024-09 | Oncology          | Inpatient      |        324 |             212 |
+| 2024-09 | Oncology          | Outpatient     |        688 |             451 |
+| 2024-09 | Orthopedics       | ER             |         16 |              10 |
+| 2024-09 | Orthopedics       | Inpatient      |        129 |              84 |
+| 2024-09 | Orthopedics       | Outpatient     |        928 |             610 |
+| 2024-09 | Psychiatry        | ER             |        282 |             185 |
+| 2024-09 | Psychiatry        | Inpatient      |        289 |             189 |
+| 2024-09 | Psychiatry        | Outpatient     |        426 |             277 |
+| 2024-09 | Pulmonology       | ER             |        303 |             198 |
+| 2024-09 | Pulmonology       | Outpatient     |        692 |             454 |
+| 2024-10 | Cardiology        | ER             |        267 |             176 |
+| 2024-10 | Cardiology        | Inpatient      |         59 |              39 |
+| 2024-10 | Cardiology        | Outpatient     |        710 |             468 |
+| 2024-10 | Emergency         | ER             |        383 |             253 |
+| 2024-10 | Emergency         | Inpatient      |        227 |             150 |
+| 2024-10 | Emergency         | Outpatient     |        440 |             290 |
+| 2024-10 | Endocrinology     | ER             |         38 |              25 |
+| 2024-10 | Endocrinology     | Inpatient      |         44 |              29 |
+| 2024-10 | Endocrinology     | Outpatient     |        952 |             626 |
+| 2024-10 | Family Medicine   | ER             |         84 |              55 |
+| 2024-10 | Family Medicine   | Outpatient     |        952 |             627 |
+| 2024-10 | Gastroenterology  | ER             |        247 |             162 |
+| 2024-10 | Gastroenterology  | Outpatient     |        789 |             517 |
+| 2024-10 | Internal Medicine | ER             |        141 |              93 |
+| 2024-10 | Internal Medicine | Inpatient      |        385 |             252 |
+| 2024-10 | Internal Medicine | Outpatient     |        553 |             365 |
+| 2024-10 | Nephrology        | ER             |        385 |             253 |
+| 2024-10 | Nephrology        | Outpatient     |        706 |             468 |
+| 2024-10 | Neurology         | ER             |        220 |             144 |
+| 2024-10 | Neurology         | Outpatient     |        839 |             552 |
+| 2024-10 | Oncology          | ER             |        386 |             253 |
+| 2024-10 | Oncology          | Outpatient     |        712 |             467 |
+| 2024-10 | Orthopedics       | ER             |         86 |              58 |
+| 2024-10 | Orthopedics       | Inpatient      |        241 |             158 |
+| 2024-10 | Orthopedics       | Outpatient     |        712 |             470 |
+| 2024-10 | Psychiatry        | ER             |        384 |             253 |
+| 2024-10 | Psychiatry        | Outpatient     |        690 |             454 |
+| 2024-10 | Pulmonology       | Inpatient      |        385 |             253 |
+| 2024-10 | Pulmonology       | Outpatient     |        705 |             464 |
+| 2024-11 | Cardiology        | ER             |        117 |              76 |
+| 2024-11 | Cardiology        | Outpatient     |        935 |             614 |
+| 2024-11 | Emergency         | ER             |        149 |              98 |
+| 2024-11 | Emergency         | Inpatient      |         37 |              25 |
+| 2024-11 | Emergency         | Outpatient     |        887 |             585 |
+| 2024-11 | Endocrinology     | Inpatient      |        340 |             225 |
+| 2024-11 | Endocrinology     | Outpatient     |        692 |             454 |
+| 2024-11 | Family Medicine   | ER             |        319 |             210 |
+| 2024-11 | Family Medicine   | Outpatient     |        689 |             453 |
+| 2024-11 | Gastroenterology  | ER             |        299 |             197 |
+| 2024-11 | Gastroenterology  | Inpatient      |          6 |               4 |
+| 2024-11 | Gastroenterology  | Outpatient     |        763 |             504 |
+| 2024-11 | Internal Medicine | ER             |        384 |             254 |
+| 2024-11 | Internal Medicine | Outpatient     |        611 |             399 |
+| 2024-11 | Nephrology        | ER             |        167 |             110 |
+| 2024-11 | Nephrology        | Inpatient      |        311 |             203 |
+| 2024-11 | Nephrology        | Outpatient     |        524 |             344 |
+| 2024-11 | Neurology         | Inpatient      |        385 |             254 |
+| 2024-11 | Neurology         | Outpatient     |        613 |             404 |
+| 2024-11 | Oncology          | ER             |        331 |             217 |
+| 2024-11 | Oncology          | Outpatient     |        690 |             454 |
+| 2024-11 | Orthopedics       | ER             |        298 |             195 |
+| 2024-11 | Orthopedics       | Outpatient     |        697 |             458 |
+| 2024-11 | Psychiatry        | Inpatient      |        127 |              83 |
+| 2024-11 | Psychiatry        | Outpatient     |        936 |             614 |
+| 2024-11 | Pulmonology       | ER             |        350 |             231 |
+| 2024-11 | Pulmonology       | Outpatient     |        689 |             455 |
+| 2024-12 | Cardiology        | ER             |        355 |             233 |
+| 2024-12 | Cardiology        | Inpatient      |         30 |              19 |
+| 2024-12 | Cardiology        | Outpatient     |        658 |             432 |
+| 2024-12 | Emergency         | ER             |        236 |             155 |
+| 2024-12 | Emergency         | Outpatient     |        761 |             499 |
+| 2024-12 | Endocrinology     | ER             |        383 |             252 |
+| 2024-12 | Endocrinology     | Outpatient     |        675 |             442 |
+| 2024-12 | Family Medicine   | Inpatient      |        385 |             252 |
+| 2024-12 | Family Medicine   | Outpatient     |        691 |             453 |
+| 2024-12 | Gastroenterology  | ER             |        216 |             143 |
+| 2024-12 | Gastroenterology  | Inpatient      |        244 |             159 |
+| 2024-12 | Gastroenterology  | Outpatient     |        561 |             368 |
+| 2024-12 | Internal Medicine | Inpatient      |        210 |             138 |
+| 2024-12 | Internal Medicine | Outpatient     |        821 |             537 |
+| 2024-12 | Nephrology        | ER             |        229 |             150 |
+| 2024-12 | Nephrology        | Inpatient      |         74 |              49 |
+| 2024-12 | Nephrology        | Outpatient     |        700 |             460 |
+| 2024-12 | Neurology         | ER             |        382 |             252 |
+| 2024-12 | Neurology         | Outpatient     |        663 |             434 |
+| 2024-12 | Oncology          | ER             |        109 |              71 |
+| 2024-12 | Oncology          | Inpatient      |          8 |               5 |
+| 2024-12 | Oncology          | Outpatient     |        879 |             576 |
+| 2024-12 | Orthopedics       | ER             |        384 |             252 |
+| 2024-12 | Orthopedics       | Outpatient     |        682 |             447 |
+| 2024-12 | Psychiatry        | ER             |         48 |              31 |
+| 2024-12 | Psychiatry        | Inpatient      |        258 |             169 |
+| 2024-12 | Psychiatry        | Outpatient     |        688 |             452 |
+| 2024-12 | Pulmonology       | ER             |         60 |              41 |
+| 2024-12 | Pulmonology       | Outpatient     |        932 |             611 |
++---------+-------------------+----------------+------------+-----------------+
++------------+------------------------------------------------+----------+-------------------------------------------------------------------+-----------------+
+| icd10_code | icd10_description                              | cpt_code | cpt_description                                                   | encounter_count |
++------------+------------------------------------------------+----------+-------------------------------------------------------------------+-----------------+
+| I10        | Essential (primary) hypertension               | 99213    | Office/outpatient visit, established patient, low complexity      |           26062 |
+| I10        | Essential (primary) hypertension               | 99214    | Office/outpatient visit, established patient, moderate complexity |           15774 |
+| E11.9      | Type 2 diabetes mellitus without complications | 99213    | Office/outpatient visit, established patient, low complexity      |           13241 |
+| I10        | Essential (primary) hypertension               | 85025    | Complete blood count with automated differential                  |           13108 |
+| I10        | Essential (primary) hypertension               | 80053    | Comprehensive metabolic panel                                     |           11520 |
+| E78.5      | Hyperlipidemia, unspecified                    | 99213    | Office/outpatient visit, established patient, low complexity      |           11512 |
+| I10        | Essential (primary) hypertension               | 36415    | Collection of venous blood by venipuncture                        |           11146 |
+| I10        | Essential (primary) hypertension               | 93000    | Electrocardiogram, routine ECG with interpretation                |            9567 |
+| I10        | Essential (primary) hypertension               | 80061    | Lipid panel                                                       |            9166 |
+| Z00.00     | General adult medical examination              | 99213    | Office/outpatient visit, established patient, low complexity      |            8939 |
+| I10        | Essential (primary) hypertension               | 83036    | Hemoglobin A1c                                                    |            8570 |
+| M54.5      | Low back pain                                  | 99213    | Office/outpatient visit, established patient, low complexity      |            8534 |
+| J45.909    | Unspecified asthma, uncomplicated              | 99213    | Office/outpatient visit, established patient, low complexity      |            8393 |
+| I10        | Essential (primary) hypertension               | 99203    | Office/outpatient visit, new patient, low complexity              |            8311 |
+| I10        | Essential (primary) hypertension               | 81003    | Urinalysis, automated, without microscopy                         |            8135 |
+| I10        | Essential (primary) hypertension               | 71046    | Radiologic examination, chest, 2 views                            |            7916 |
+| E11.9      | Type 2 diabetes mellitus without complications | 99214    | Office/outpatient visit, established patient, moderate complexity |            7870 |
+| I10        | Essential (primary) hypertension               | 84443    | Thyroid stimulating hormone assay                                 |            7851 |
+| I10        | Essential (primary) hypertension               | 99283    | Emergency department visit, low complexity                        |            7448 |
+| I10        | Essential (primary) hypertension               | 70450    | CT head/brain without contrast                                    |            7362 |
++------------+------------------------------------------------+----------+-------------------------------------------------------------------+-----------------+
++-------------------+----------------------+------------------+----------------------+
+| specialty_name    | inpatient_discharges | readmissions_30d | readmission_rate_pct |
++-------------------+----------------------+------------------+----------------------+
+| Cardiology        |                 2473 |                0 |                 0.00 |
+| Internal Medicine |                 2553 |                0 |                 0.00 |
+| Emergency         |                 2441 |                0 |                 0.00 |
+| Orthopedics       |                 2543 |                0 |                 0.00 |
+| Pulmonology       |                 2479 |                0 |                 0.00 |
+| Endocrinology     |                 2495 |                0 |                 0.00 |
+| Nephrology        |                 2523 |                0 |                 0.00 |
+| Gastroenterology  |                 2452 |                0 |                 0.00 |
+| Neurology         |                 2555 |                0 |                 0.00 |
+| Psychiatry        |                 2464 |                0 |                 0.00 |
+| Family Medicine   |                 2516 |                0 |                 0.00 |
+| Oncology          |                 2507 |                0 |                 0.00 |
++-------------------+----------------------+------------------+----------------------+
++---------+-------------------+--------+---------------+
+| month   | specialty_name    | claims | total_allowed |
++---------+-------------------+--------+---------------+
+| 2023-01 | Cardiology        |   1038 |    5826842.92 |
+| 2023-01 | Emergency         |   1039 |   10116036.54 |
+| 2023-01 | Endocrinology     |   1039 |     946473.68 |
+| 2023-01 | Family Medicine   |   1043 |     836194.57 |
+| 2023-01 | Gastroenterology  |   1038 |    1167025.70 |
+| 2023-01 | Internal Medicine |   1097 |    4523127.02 |
+| 2023-01 | Nephrology        |   1094 |     573604.69 |
+| 2023-01 | Neurology         |   1084 |     562082.81 |
+| 2023-01 | Oncology          |   1089 |    7758953.21 |
+| 2023-01 | Orthopedics       |   1068 |    3413400.77 |
+| 2023-01 | Psychiatry        |   1047 |     826036.82 |
+| 2023-01 | Pulmonology       |   1069 |     900002.66 |
+| 2023-02 | Cardiology        |    980 |     598029.46 |
+| 2023-02 | Emergency         |   1009 |    1192756.26 |
+| 2023-02 | Endocrinology     |    962 |    2111566.31 |
+| 2023-02 | Family Medicine   |    937 |     337468.70 |
+| 2023-02 | Gastroenterology  |    998 |    6183617.27 |
+| 2023-02 | Internal Medicine |    916 |     799377.13 |
+| 2023-02 | Nephrology        |    934 |   14453163.38 |
+| 2023-02 | Neurology         |    907 |     698591.27 |
+| 2023-02 | Oncology          |    956 |    1009402.63 |
+| 2023-02 | Orthopedics       |    920 |    8439139.57 |
+| 2023-02 | Psychiatry        |    996 |     831772.98 |
+| 2023-02 | Pulmonology       |    977 |   11717298.59 |
+| 2023-03 | Cardiology        |   1066 |     803287.97 |
+| 2023-03 | Emergency         |   1040 |     302663.97 |
+| 2023-03 | Endocrinology     |   1085 |    7629419.60 |
+| 2023-03 | Family Medicine   |   1095 |    3599017.97 |
+| 2023-03 | Gastroenterology  |   1047 |   10353867.12 |
+| 2023-03 | Internal Medicine |   1070 |     513925.86 |
+| 2023-03 | Nephrology        |   1048 |     516733.88 |
+| 2023-03 | Neurology         |   1085 |   18081200.02 |
+| 2023-03 | Oncology          |   1039 |    4902182.29 |
+| 2023-03 | Orthopedics       |   1097 |     487115.76 |
+| 2023-03 | Psychiatry        |   1039 |    2155170.19 |
+| 2023-03 | Pulmonology       |   1039 |    2318016.58 |
+| 2023-04 | Cardiology        |    989 |    2658217.22 |
+| 2023-04 | Emergency         |    999 |     471657.22 |
+| 2023-04 | Endocrinology     |    998 |     637554.07 |
+| 2023-04 | Family Medicine   |   1002 |    1382527.32 |
+| 2023-04 | Gastroenterology  |    996 |     489330.02 |
+| 2023-04 | Internal Medicine |   1065 |    1422116.47 |
+| 2023-04 | Nephrology        |   1076 |     480360.97 |
+| 2023-04 | Neurology         |   1043 |     542679.87 |
+| 2023-04 | Oncology          |   1060 |    1081315.63 |
+| 2023-04 | Orthopedics       |   1024 |    1049802.07 |
+| 2023-04 | Psychiatry        |   1023 |    5335958.45 |
+| 2023-04 | Pulmonology       |   1045 |     418893.67 |
+| 2023-05 | Cardiology        |   1063 |     808505.10 |
+| 2023-05 | Emergency         |   1096 |    5530903.18 |
+| 2023-05 | Endocrinology     |   1046 |    4404549.40 |
+| 2023-05 | Family Medicine   |   1037 |     627149.68 |
+| 2023-05 | Gastroenterology  |   1085 |     596707.32 |
+| 2023-05 | Internal Medicine |   1038 |    2930877.96 |
+| 2023-05 | Nephrology        |   1048 |     524723.86 |
+| 2023-05 | Neurology         |   1041 |     375319.38 |
+| 2023-05 | Oncology          |   1073 |     565966.39 |
+| 2023-05 | Orthopedics       |   1037 |    1904515.73 |
+| 2023-05 | Psychiatry        |   1101 |     647494.63 |
+| 2023-05 | Pulmonology       |   1085 |    5720096.95 |
+| 2023-06 | Cardiology        |   1066 |     492263.34 |
+| 2023-06 | Emergency         |   1023 |     882563.94 |
+| 2023-06 | Endocrinology     |   1074 |    3362431.71 |
+| 2023-06 | Family Medicine   |   1060 |     419757.24 |
+| 2023-06 | Gastroenterology  |   1051 |    3647502.64 |
+| 2023-06 | Internal Medicine |   1000 |     704231.51 |
+| 2023-06 | Nephrology        |    993 |    8769666.78 |
+| 2023-06 | Neurology         |   1018 |    2545212.83 |
+| 2023-06 | Oncology          |    991 |     794329.20 |
+| 2023-06 | Orthopedics       |   1040 |    2217590.97 |
+| 2023-06 | Psychiatry        |   1008 |    6446029.19 |
+| 2023-06 | Pulmonology       |    995 |    1045997.79 |
+| 2023-07 | Cardiology        |   1041 |     642590.22 |
+| 2023-07 | Emergency         |   1034 |    1551292.92 |
+| 2023-07 | Endocrinology     |   1050 |     572622.24 |
+| 2023-07 | Family Medicine   |   1075 |    9109520.29 |
+| 2023-07 | Gastroenterology  |   1037 |    6055317.24 |
+| 2023-07 | Internal Medicine |   1098 |    5249560.85 |
+| 2023-07 | Nephrology        |   1081 |     940945.50 |
+| 2023-07 | Neurology         |   1096 |    3465534.22 |
+| 2023-07 | Oncology          |   1063 |    5974062.14 |
+| 2023-07 | Orthopedics       |   1093 |    1082476.60 |
+| 2023-07 | Psychiatry        |   1045 |    2181124.34 |
+| 2023-07 | Pulmonology       |   1037 |     821463.05 |
+| 2023-08 | Cardiology        |   1033 |   12806831.20 |
+| 2023-08 | Emergency         |   1061 |   12166756.95 |
+| 2023-08 | Endocrinology     |   1042 |    1105798.42 |
+| 2023-08 | Family Medicine   |   1036 |    1172889.14 |
+| 2023-08 | Gastroenterology  |   1038 |     907377.84 |
+| 2023-08 | Internal Medicine |   1077 |    4229258.44 |
+| 2023-08 | Nephrology        |   1091 |     480467.97 |
+| 2023-08 | Neurology         |   1055 |     955701.20 |
+| 2023-08 | Oncology          |   1098 |    5238971.89 |
+| 2023-08 | Orthopedics       |   1036 |   12552645.86 |
+| 2023-08 | Psychiatry        |   1076 |     540969.39 |
+| 2023-08 | Pulmonology       |   1094 |     597547.68 |
+| 2023-09 | Cardiology        |   1056 |     482751.54 |
+| 2023-09 | Emergency         |   1073 |     566427.73 |
+| 2023-09 | Endocrinology     |   1030 |    9942285.98 |
+| 2023-09 | Family Medicine   |   1014 |     339029.93 |
+| 2023-09 | Gastroenterology  |   1074 |   11648971.42 |
+| 2023-09 | Internal Medicine |    997 |     307657.44 |
+| 2023-09 | Nephrology        |    994 |    5761702.77 |
+| 2023-09 | Neurology         |    991 |     408507.66 |
+| 2023-09 | Oncology          |   1017 |     436429.18 |
+| 2023-09 | Orthopedics       |    996 |    2908849.03 |
+| 2023-09 | Psychiatry        |   1057 |     925695.77 |
+| 2023-09 | Pulmonology       |   1033 |   16852691.25 |
+| 2023-10 | Cardiology        |   1078 |    1694396.92 |
+| 2023-10 | Emergency         |   1040 |     585522.12 |
+| 2023-10 | Endocrinology     |   1098 |    9453512.02 |
+| 2023-10 | Family Medicine   |   1094 |     588374.83 |
+| 2023-10 | Gastroenterology  |   1058 |     637028.52 |
+| 2023-10 | Internal Medicine |   1054 |     585248.51 |
+| 2023-10 | Nephrology        |   1038 |    1103353.56 |
+| 2023-10 | Neurology         |   1072 |    2018002.92 |
+| 2023-10 | Oncology          |   1033 |    2208572.02 |
+| 2023-10 | Orthopedics       |   1099 |     452717.65 |
+| 2023-10 | Psychiatry        |   1034 |    2472697.32 |
+| 2023-10 | Pulmonology       |   1038 |     501510.67 |
+| 2023-11 | Cardiology        |    993 |    3640770.58 |
+| 2023-11 | Emergency         |    995 |     403230.01 |
+| 2023-11 | Endocrinology     |   1001 |     472736.90 |
+| 2023-11 | Family Medicine   |   1019 |    4672244.84 |
+| 2023-11 | Gastroenterology  |    995 |     375991.55 |
+| 2023-11 | Internal Medicine |   1074 |    6364518.44 |
+| 2023-11 | Nephrology        |   1070 |     692779.31 |
+| 2023-11 | Neurology         |   1059 |     725375.88 |
+| 2023-11 | Oncology          |   1052 |    1667852.75 |
+| 2023-11 | Orthopedics       |   1036 |     699073.85 |
+| 2023-11 | Psychiatry        |   1010 |    1317770.76 |
+| 2023-11 | Pulmonology       |   1031 |     930070.63 |
+| 2023-12 | Cardiology        |   1046 |     863558.49 |
+| 2023-12 | Emergency         |   1091 |    7745953.04 |
+| 2023-12 | Endocrinology     |   1039 |    6933426.02 |
+| 2023-12 | Family Medicine   |   1034 |     914070.85 |
+| 2023-12 | Gastroenterology  |   1073 |     666163.32 |
+| 2023-12 | Internal Medicine |   1040 |     954336.66 |
+| 2023-12 | Nephrology        |   1064 |    2438713.85 |
+| 2023-12 | Neurology         |   1034 |     789645.34 |
+| 2023-12 | Oncology          |   1082 |     497948.08 |
+| 2023-12 | Orthopedics       |   1039 |    7552554.41 |
+| 2023-12 | Psychiatry        |   1094 |     445815.82 |
+| 2023-12 | Pulmonology       |   1096 |    3208598.30 |
+| 2024-01 | Cardiology        |   1096 |    1118685.04 |
+| 2024-01 | Emergency         |   1082 |     940390.99 |
+| 2024-01 | Endocrinology     |   1087 |     984373.78 |
+| 2024-01 | Family Medicine   |   1069 |    6689966.34 |
+| 2024-01 | Gastroenterology  |   1097 |    9558412.14 |
+| 2024-01 | Internal Medicine |   1040 |     436512.28 |
+| 2024-01 | Nephrology        |   1038 |    6157908.31 |
+| 2024-01 | Neurology         |   1036 |    1158143.86 |
+| 2024-01 | Oncology          |   1034 |     732445.79 |
+| 2024-01 | Orthopedics       |   1048 |    3008798.27 |
+| 2024-01 | Psychiatry        |   1069 |    7066835.37 |
+| 2024-01 | Pulmonology       |   1042 |    1652113.19 |
+| 2024-02 | Cardiology        |    979 |    2869500.78 |
+| 2024-02 | Emergency         |    951 |    6787223.83 |
+| 2024-02 | Endocrinology     |   1000 |     404405.33 |
+| 2024-02 | Family Medicine   |   1021 |    5806462.93 |
+| 2024-02 | Gastroenterology  |    959 |     904558.11 |
+| 2024-02 | Internal Medicine |   1020 |    1116480.45 |
+| 2024-02 | Nephrology        |   1004 |     998327.99 |
+| 2024-02 | Neurology         |   1045 |   11050278.63 |
+| 2024-02 | Oncology          |    985 |   13841822.11 |
+| 2024-02 | Orthopedics       |   1041 |     535696.91 |
+| 2024-02 | Psychiatry        |    951 |    1649158.76 |
+| 2024-02 | Pulmonology       |    962 |     972968.39 |
+| 2024-03 | Cardiology        |   1034 |   12943391.48 |
+| 2024-03 | Emergency         |   1064 |    3953930.73 |
+| 2024-03 | Endocrinology     |   1040 |     936809.29 |
+| 2024-03 | Family Medicine   |   1042 |     457514.10 |
+| 2024-03 | Gastroenterology  |   1049 |     531315.74 |
+| 2024-03 | Internal Medicine |   1068 |   16208673.64 |
+| 2024-03 | Nephrology        |   1085 |     559882.02 |
+| 2024-03 | Neurology         |   1049 |     482266.65 |
+| 2024-03 | Oncology          |   1100 |     555618.14 |
+| 2024-03 | Orthopedics       |   1037 |   12453574.71 |
+| 2024-03 | Psychiatry        |   1088 |     388981.49 |
+| 2024-03 | Pulmonology       |   1094 |    5477691.98 |
+| 2024-04 | Cardiology        |   1065 |     639238.98 |
+| 2024-04 | Emergency         |   1067 |     465741.20 |
+| 2024-04 | Endocrinology     |   1039 |    2544558.58 |
+| 2024-04 | Family Medicine   |   1019 |     594326.05 |
+| 2024-04 | Gastroenterology  |   1073 |    2384850.13 |
+| 2024-04 | Internal Medicine |    997 |    1528606.05 |
+| 2024-04 | Nephrology        |    993 |    1035420.85 |
+| 2024-04 | Neurology         |    987 |    2659851.15 |
+| 2024-04 | Oncology          |   1006 |     369529.83 |
+| 2024-04 | Orthopedics       |   1005 |     560880.33 |
+| 2024-04 | Psychiatry        |   1048 |     447943.33 |
+| 2024-04 | Pulmonology       |   1020 |    1176553.00 |
+| 2024-05 | Cardiology        |   1070 |    5734317.98 |
+| 2024-05 | Emergency         |   1038 |     595071.73 |
+| 2024-05 | Endocrinology     |   1093 |     800347.64 |
+| 2024-05 | Family Medicine   |   1094 |    2928274.42 |
+| 2024-05 | Gastroenterology  |   1052 |     827376.42 |
+| 2024-05 | Internal Medicine |   1062 |     362521.93 |
+| 2024-05 | Nephrology        |   1041 |    3065889.25 |
+| 2024-05 | Neurology         |   1085 |    2126734.09 |
+| 2024-05 | Oncology          |   1040 |     589220.59 |
+| 2024-05 | Orthopedics       |   1098 |     524635.34 |
+| 2024-05 | Psychiatry        |   1037 |    5420652.85 |
+| 2024-05 | Pulmonology       |   1039 |     584700.00 |
+| 2024-06 | Cardiology        |    992 |    1242794.61 |
+| 2024-06 | Emergency         |    998 |    4533258.57 |
+| 2024-06 | Endocrinology     |    993 |     359850.38 |
+| 2024-06 | Family Medicine   |   1009 |    4453238.31 |
+| 2024-06 | Gastroenterology  |    994 |     704158.48 |
+| 2024-06 | Internal Medicine |   1075 |    7065188.90 |
+| 2024-06 | Nephrology        |   1068 |     816169.06 |
+| 2024-06 | Neurology         |   1047 |     543646.45 |
+| 2024-06 | Oncology          |   1059 |    7673652.93 |
+| 2024-06 | Orthopedics       |   1030 |     506807.69 |
+| 2024-06 | Psychiatry        |   1014 |    1000807.87 |
+| 2024-06 | Pulmonology       |   1040 |     798149.77 |
+| 2024-07 | Cardiology        |   1059 |     400892.47 |
+| 2024-07 | Emergency         |   1096 |    3356640.54 |
+| 2024-07 | Endocrinology     |   1042 |    8237626.21 |
+| 2024-07 | Family Medicine   |   1033 |     937155.16 |
+| 2024-07 | Gastroenterology  |   1081 |     477827.16 |
+| 2024-07 | Internal Medicine |   1034 |     971385.52 |
+| 2024-07 | Nephrology        |   1059 |    9939790.16 |
+| 2024-07 | Neurology         |   1036 |    1054872.94 |
+| 2024-07 | Oncology          |   1075 |     977009.92 |
+| 2024-07 | Orthopedics       |   1042 |    8783388.05 |
+| 2024-07 | Psychiatry        |   1099 |     617928.08 |
+| 2024-07 | Pulmonology       |   1094 |    4463634.32 |
+| 2024-08 | Cardiology        |   1094 |     958822.19 |
+| 2024-08 | Emergency         |   1074 |     680804.32 |
+| 2024-08 | Endocrinology     |   1096 |    1252736.27 |
+| 2024-08 | Family Medicine   |   1074 |   14361673.76 |
+| 2024-08 | Gastroenterology  |   1096 |   12770638.04 |
+| 2024-08 | Internal Medicine |   1037 |     728212.47 |
+| 2024-08 | Nephrology        |   1033 |    1923906.77 |
+| 2024-08 | Neurology         |   1035 |    9028022.40 |
+| 2024-08 | Oncology          |   1037 |    2928688.46 |
+| 2024-08 | Orthopedics       |   1058 |    1107882.60 |
+| 2024-08 | Psychiatry        |   1053 |     822711.68 |
+| 2024-08 | Pulmonology       |   1038 |    4734642.35 |
+| 2024-09 | Cardiology        |   1014 |   10819200.18 |
+| 2024-09 | Emergency         |    993 |     931881.47 |
+| 2024-09 | Endocrinology     |   1037 |     417466.58 |
+| 2024-09 | Family Medicine   |   1057 |     480035.44 |
+| 2024-09 | Gastroenterology  |   1001 |     496673.70 |
+| 2024-09 | Internal Medicine |   1053 |     553489.44 |
+| 2024-09 | Nephrology        |   1036 |     336959.45 |
+| 2024-09 | Neurology         |   1076 |    5734608.36 |
+| 2024-09 | Oncology          |   1012 |   14297430.07 |
+| 2024-09 | Orthopedics       |   1073 |     822050.76 |
+| 2024-09 | Psychiatry        |    997 |   12105490.02 |
+| 2024-09 | Pulmonology       |    995 |     707590.49 |
+| 2024-10 | Cardiology        |   1036 |    1678552.16 |
+| 2024-10 | Emergency         |   1050 |    2117110.42 |
+| 2024-10 | Endocrinology     |   1034 |     746438.25 |
+| 2024-10 | Family Medicine   |   1036 |     408991.31 |
+| 2024-10 | Gastroenterology  |   1036 |     490457.58 |
+| 2024-10 | Internal Medicine |   1079 |    2051166.62 |
+| 2024-10 | Nephrology        |   1091 |     595892.39 |
+| 2024-10 | Neurology         |   1059 |     537291.05 |
+| 2024-10 | Oncology          |   1098 |     540551.26 |
+| 2024-10 | Orthopedics       |   1039 |    1767569.23 |
+| 2024-10 | Psychiatry        |   1074 |     659097.32 |
+| 2024-10 | Pulmonology       |   1090 |    3416528.05 |
+| 2024-11 | Cardiology        |   1052 |     412637.17 |
+| 2024-11 | Emergency         |   1073 |     827435.03 |
+| 2024-11 | Endocrinology     |   1032 |    4228276.02 |
+| 2024-11 | Family Medicine   |   1008 |     491483.22 |
+| 2024-11 | Gastroenterology  |   1068 |     821001.33 |
+| 2024-11 | Internal Medicine |    995 |     669846.07 |
+| 2024-11 | Nephrology        |   1002 |    5065627.71 |
+| 2024-11 | Neurology         |    998 |    6667921.81 |
+| 2024-11 | Oncology          |   1021 |     601414.37 |
+| 2024-11 | Orthopedics       |    995 |     624654.23 |
+| 2024-11 | Psychiatry        |   1063 |    2742501.33 |
+| 2024-11 | Pulmonology       |   1039 |     846774.68 |
+| 2024-12 | Cardiology        |   1043 |    1269147.66 |
+| 2024-12 | Emergency         |    997 |     511281.11 |
+| 2024-12 | Endocrinology     |   1058 |     912621.73 |
+| 2024-12 | Family Medicine   |   1076 |    7964044.44 |
+| 2024-12 | Gastroenterology  |   1021 |    4998900.98 |
+| 2024-12 | Internal Medicine |   1031 |    4780598.96 |
+| 2024-12 | Nephrology        |   1003 |    1888618.11 |
+| 2024-12 | Neurology         |   1045 |     811807.86 |
+| 2024-12 | Oncology          |    996 |     606319.62 |
+| 2024-12 | Orthopedics       |   1066 |     896243.80 |
+| 2024-12 | Psychiatry        |    994 |    5849627.44 |
+| 2024-12 | Pulmonology       |    992 |     319558.19 |
++---------+-------------------+--------+---------------+

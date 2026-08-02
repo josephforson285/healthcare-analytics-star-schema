@@ -21,10 +21,26 @@
 --   encounter_procedures ~750,000   (1-4 per encounter, avg 2.5)
 --   billing           300,000   (1:1 with encounters)
 --
--- REPRODUCIBILITY
--- All randomness uses RAND(<seed derived from row number>), so this
--- script produces byte-identical data on every run. Your timings are
--- comparable across runs and across machines.
+-- REPRODUCIBILITY AND RANDOMNESS
+-- Every pseudo-random value is derived by hashing the row number:
+--
+--     CONV(SUBSTR(MD5(CONCAT(n, ':', salt)), 1, 8), 16, 10) / 4294967296
+--
+-- giving a uniform value in [0,1) that is identical on every run and on
+-- every machine.
+--
+-- This deliberately does NOT use RAND(seed). MySQL's RAND(N) seeds a
+-- linear congruential generator, and consecutive seeds produce output
+-- that is strongly correlated rather than independent. An earlier version
+-- of this script used RAND(n * 7 + 101) and friends; the result was a
+-- rigid lattice -- patient_id advanced by exactly 257 and encounter_date
+-- by exactly 10 days for every 4 steps in encounter_id. The dataset
+-- looked random in aggregate (correct 70/20/10 type mix, correct means)
+-- and was structurally degenerate underneath: no patient ever had two
+-- encounters within 30 days of each other, so Q3 measured a readmission
+-- rate of exactly 0.00% across all twelve specialties.
+--
+-- An MD5 hash has no such structure between adjacent inputs.
 -- =====================================================================
 
 USE healthcare_oltp;
@@ -35,7 +51,8 @@ SET autocommit         = 0;
 
 -- ---------------------------------------------------------------------
 -- Load helper: a numbers table 1..1,000,000, built by cross-joining
--- digit tables. Dropped at the end of this script.
+-- digit tables, carrying eight precomputed hash-random columns.
+-- Dropped at the end of this script.
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS _numbers;
 CREATE TABLE _numbers (n INT PRIMARY KEY) ENGINE=InnoDB;
@@ -54,6 +71,23 @@ CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 
            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) d4
 CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) d5;
+COMMIT;
+
+-- Eight independent uniform [0,1) streams, keyed on n. Precomputed once
+-- here so the generation queries below stay readable.
+ALTER TABLE _numbers
+    ADD COLUMN r1 DOUBLE, ADD COLUMN r2 DOUBLE, ADD COLUMN r3 DOUBLE, ADD COLUMN r4 DOUBLE,
+    ADD COLUMN r5 DOUBLE, ADD COLUMN r6 DOUBLE, ADD COLUMN r7 DOUBLE, ADD COLUMN r8 DOUBLE;
+
+UPDATE _numbers SET
+    r1 = CONV(SUBSTR(MD5(CONCAT(n,':1')),1,8),16,10) / 4294967296,
+    r2 = CONV(SUBSTR(MD5(CONCAT(n,':2')),1,8),16,10) / 4294967296,
+    r3 = CONV(SUBSTR(MD5(CONCAT(n,':3')),1,8),16,10) / 4294967296,
+    r4 = CONV(SUBSTR(MD5(CONCAT(n,':4')),1,8),16,10) / 4294967296,
+    r5 = CONV(SUBSTR(MD5(CONCAT(n,':5')),1,8),16,10) / 4294967296,
+    r6 = CONV(SUBSTR(MD5(CONCAT(n,':6')),1,8),16,10) / 4294967296,
+    r7 = CONV(SUBSTR(MD5(CONCAT(n,':7')),1,8),16,10) / 4294967296,
+    r8 = CONV(SUBSTR(MD5(CONCAT(n,':8')),1,8),16,10) / 4294967296;
 COMMIT;
 
 -- ---------------------------------------------------------------------
@@ -120,8 +154,8 @@ SELECT
     ELT(1 + ((n * 13) % 20), 'Doe','Smith','Johnson','Mensah','Ali','Sharma','Tran','Appiah',
                              'Costa','Park','Darko','Yusuf','Baffour','Horvath','Ncube','Amoah',
                              'Santos','Antwi','Wanjiru','Berg'),
-    DATE_ADD('1930-01-01', INTERVAL FLOOR(RAND(n * 3 + 1) * 29200) DAY),  -- ~1930..2010
-    IF(RAND(n * 5 + 2) < 0.51, 'F', 'M'),
+    DATE_ADD('1930-01-01', INTERVAL FLOOR(r7 * 29200) DAY),  -- ~1930..2010
+    IF(r8 < 0.51, 'F', 'M'),
     CONCAT('MRN', LPAD(n, 6, '0'))
 FROM _numbers WHERE n <= 50000;
 COMMIT;
@@ -242,12 +276,7 @@ FROM (
         TIMESTAMP('2023-01-01 00:00:00') + INTERVAL FLOOR(r.r4 * 1051200) MINUTE     AS encounter_date,
         r.r5
     FROM (
-        SELECT n,
-               RAND(n * 7  + 101) AS r1,
-               RAND(n * 13 + 202) AS r2,
-               RAND(n * 17 + 303) AS r3,
-               RAND(n * 19 + 404) AS r4,
-               RAND(n * 23 + 505) AS r5
+        SELECT n, r1, r2, r3, r4, r5
         FROM _numbers WHERE n <= 300000
     ) r
     JOIN providers p ON p.provider_id = 100 + 1 + FLOOR(r.r2 * 60)
@@ -289,11 +318,11 @@ CREATE TABLE _ed_stage (
 INSERT INTO _ed_stage (encounter_id, diagnosis_id, seq)
 SELECT
     e.encounter_id,
-    3001 + FLOOR(POW(RAND(e.encounter_id * 31 + s.n * 97), 1.7) * 40),
+    3001 + FLOOR(POW(CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':',s.n,':dx')),1,8),16,10)/4294967296, 1.7) * 40),
     s.n
 FROM encounters e
 JOIN _numbers s ON s.n <= 5
-WHERE s.n <= 1 + FLOOR(RAND(e.encounter_id * 29 + 11) * 5);
+WHERE s.n <= 1 + FLOOR(CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':dxn')),1,8),16,10)/4294967296 * 5);
 
 -- Drop repeats (keep the earliest sequence -- the more severe coding),
 -- then renumber so diagnosis_sequence stays contiguous 1..n per encounter.
@@ -336,16 +365,16 @@ CREATE TABLE _ep_stage (
 INSERT INTO _ep_stage (encounter_id, procedure_id, seq, procedure_date)
 SELECT
     e.encounter_id,
-    4001 + FLOOR(POW(RAND(e.encounter_id * 41 + s.n * 89), 1.5) * 30),
+    4001 + FLOOR(POW(CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':',s.n,':px')),1,8),16,10)/4294967296, 1.5) * 30),
     s.n,
     DATE(e.encounter_date)
         + INTERVAL LEAST(
-              IF(e.encounter_type = 'Inpatient', FLOOR(RAND(e.encounter_id * 53 + s.n) * 4), 0),
+              IF(e.encounter_type = 'Inpatient', FLOOR(CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':',s.n,':pxd')),1,8),16,10)/4294967296 * 4), 0),
               DATEDIFF(e.discharge_date, e.encounter_date)
           ) DAY
 FROM encounters e
 JOIN _numbers s ON s.n <= 4
-WHERE s.n <= 1 + FLOOR(RAND(e.encounter_id * 43 + 13) * 4);
+WHERE s.n <= 1 + FLOOR(CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':pxn')),1,8),16,10)/4294967296 * 4);
 
 INSERT INTO encounter_procedures (encounter_procedure_id, encounter_id, procedure_id, procedure_date)
 SELECT b.encounter_id * 10 + b.new_seq, b.encounter_id, b.procedure_id, b.procedure_date
@@ -385,14 +414,14 @@ FROM (
         e.encounter_id,
         ROUND(
             CASE e.encounter_type
-                WHEN 'Outpatient' THEN   150 + RAND(e.encounter_id * 59 + 17) *   450
-                WHEN 'ER'         THEN   800 + RAND(e.encounter_id * 59 + 17) *  3200
-                ELSE                    5000 + RAND(e.encounter_id * 59 + 17) * 55000
+                WHEN 'Outpatient' THEN   150 + CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':amt')),1,8),16,10)/4294967296 *   450
+                WHEN 'ER'         THEN   800 + CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':amt')),1,8),16,10)/4294967296 *  3200
+                ELSE                    5000 + CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':amt')),1,8),16,10)/4294967296 * 55000
             END, 2)                                                          AS claim_amount,
         DATE(e.discharge_date)
-            + INTERVAL (1 + FLOOR(RAND(e.encounter_id * 61 + 19) * 20)) DAY  AS claim_date,
-        RAND(e.encounter_id * 67 + 23)                                       AS r3,
-        RAND(e.encounter_id * 71 + 29)                                       AS r4
+            + INTERVAL (1 + FLOOR(CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':lag')),1,8),16,10)/4294967296 * 20)) DAY  AS claim_date,
+        CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':adj')),1,8),16,10)/4294967296                                       AS r3,
+        CONV(SUBSTR(MD5(CONCAT(e.encounter_id,':sts')),1,8),16,10)/4294967296                                       AS r4
     FROM encounters e
 ) b;
 COMMIT;
