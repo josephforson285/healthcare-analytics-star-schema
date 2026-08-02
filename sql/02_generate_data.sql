@@ -259,36 +259,108 @@ COMMIT;
 --
 -- Diagnosis choice is skewed with POW(r, 1.7) so low ids (the common
 -- chronic conditions listed first) dominate -- a realistic long tail.
--- Each sequence number is offset by a coprime stride (11 mod 40) so the
--- same diagnosis is not usually recorded twice on one encounter.
+--
+-- Independent random draws per sequence WILL collide (~3% of rows picked
+-- the same diagnosis twice on one encounter). The source schema has no
+-- UNIQUE(encounter_id, diagnosis_id) to stop that, but it is clinically
+-- nonsensical, so we generate freely and then dedupe. Deduping after the
+-- fact preserves the skewed distribution; forcing distinctness during
+-- generation (e.g. a fixed stride between sequences) would make every
+-- encounter's diagnosis set an arithmetic progression -- distinct, but
+-- with completely artificial co-occurrence structure.
 -- ---------------------------------------------------------------------
-INSERT INTO encounter_diagnoses (encounter_diagnosis_id, encounter_id, diagnosis_id, diagnosis_sequence)
+-- Dedupe happens in a staging table, NOT in encounter_diagnoses itself.
+-- Two reasons, both learned the hard way:
+--   1. A self-join DELETE against the live 900k-row table is a nested loop
+--      over 900k x 900k with no usable index -- it ran past ten minutes
+--      before being killed. (Exactly the Q3 failure mode, met by accident.)
+--   2. Adding a temp index to fix that then cannot be dropped: InnoDB
+--      binds it to the encounter_id foreign key. The OLTP schema has to
+--      stay byte-identical to the brief or Part 2 measures our tuning
+--      instead of the brief's schema.
+-- Staging sidesteps both: index freely on a table with no constraints,
+-- then insert the already-clean result exactly once.
+DROP TABLE IF EXISTS _ed_stage;
+CREATE TABLE _ed_stage (
+    encounter_id INT, diagnosis_id INT, seq INT,
+    KEY k (encounter_id, diagnosis_id)
+) ENGINE=InnoDB;
+
+INSERT INTO _ed_stage (encounter_id, diagnosis_id, seq)
 SELECT
-    e.encounter_id * 10 + s.n,
     e.encounter_id,
-    3001 + ((FLOOR(POW(RAND(e.encounter_id * 31 + s.n * 97), 1.7) * 40) + (s.n - 1) * 11) % 40),
+    3001 + FLOOR(POW(RAND(e.encounter_id * 31 + s.n * 97), 1.7) * 40),
     s.n
 FROM encounters e
 JOIN _numbers s ON s.n <= 5
 WHERE s.n <= 1 + FLOOR(RAND(e.encounter_id * 29 + 11) * 5);
+
+-- Drop repeats (keep the earliest sequence -- the more severe coding),
+-- then renumber so diagnosis_sequence stays contiguous 1..n per encounter.
+INSERT INTO encounter_diagnoses (encounter_diagnosis_id, encounter_id, diagnosis_id, diagnosis_sequence)
+SELECT b.encounter_id * 10 + b.new_seq, b.encounter_id, b.diagnosis_id, b.new_seq
+FROM (
+    SELECT encounter_id, diagnosis_id,
+           ROW_NUMBER() OVER (PARTITION BY encounter_id ORDER BY seq) AS new_seq
+    FROM (
+        SELECT encounter_id, diagnosis_id, seq,
+               ROW_NUMBER() OVER (PARTITION BY encounter_id, diagnosis_id ORDER BY seq) AS dup_rank
+        FROM _ed_stage
+    ) a
+    WHERE a.dup_rank = 1
+) b;
+
+DROP TABLE _ed_stage;
 COMMIT;
 
 -- ---------------------------------------------------------------------
 -- encounter_procedures (~750,000) -- 1 to 4 rows per encounter.
--- Procedure date lands on the encounter date, or up to 3 days later for
--- inpatients (procedures happen during the stay, not just on admission).
+--
+-- Procedure date lands on the encounter date, or later for inpatients
+-- (procedures happen throughout a stay, not just on admission). The
+-- offset is clamped with LEAST(..., DATEDIFF(discharge, encounter)) so a
+-- procedure can never be dated after the patient went home. Nothing in
+-- the source schema enforces that -- there is no CHECK constraint tying
+-- procedure_date to the encounter window -- so the generator has to.
+--
+-- Deduped for the same reason as diagnoses: the same procedure billed
+-- twice on one encounter with no distinguishing attribute is a data
+-- error, not a real repeat.
 -- ---------------------------------------------------------------------
-INSERT INTO encounter_procedures (encounter_procedure_id, encounter_id, procedure_id, procedure_date)
+DROP TABLE IF EXISTS _ep_stage;
+CREATE TABLE _ep_stage (
+    encounter_id INT, procedure_id INT, seq INT, procedure_date DATE,
+    KEY k (encounter_id, procedure_id)
+) ENGINE=InnoDB;
+
+INSERT INTO _ep_stage (encounter_id, procedure_id, seq, procedure_date)
 SELECT
-    e.encounter_id * 10 + s.n,
     e.encounter_id,
-    4001 + ((FLOOR(POW(RAND(e.encounter_id * 41 + s.n * 89), 1.5) * 30) + (s.n - 1) * 7) % 30),
+    4001 + FLOOR(POW(RAND(e.encounter_id * 41 + s.n * 89), 1.5) * 30),
+    s.n,
     DATE(e.encounter_date)
-        + INTERVAL IF(e.encounter_type = 'Inpatient',
-                      FLOOR(RAND(e.encounter_id * 53 + s.n) * 4), 0) DAY
+        + INTERVAL LEAST(
+              IF(e.encounter_type = 'Inpatient', FLOOR(RAND(e.encounter_id * 53 + s.n) * 4), 0),
+              DATEDIFF(e.discharge_date, e.encounter_date)
+          ) DAY
 FROM encounters e
 JOIN _numbers s ON s.n <= 4
 WHERE s.n <= 1 + FLOOR(RAND(e.encounter_id * 43 + 13) * 4);
+
+INSERT INTO encounter_procedures (encounter_procedure_id, encounter_id, procedure_id, procedure_date)
+SELECT b.encounter_id * 10 + b.new_seq, b.encounter_id, b.procedure_id, b.procedure_date
+FROM (
+    SELECT encounter_id, procedure_id, procedure_date,
+           ROW_NUMBER() OVER (PARTITION BY encounter_id ORDER BY seq) AS new_seq
+    FROM (
+        SELECT encounter_id, procedure_id, seq, procedure_date,
+               ROW_NUMBER() OVER (PARTITION BY encounter_id, procedure_id ORDER BY seq) AS dup_rank
+        FROM _ep_stage
+    ) a
+    WHERE a.dup_rank = 1
+) b;
+
+DROP TABLE _ep_stage;
 COMMIT;
 
 -- ---------------------------------------------------------------------

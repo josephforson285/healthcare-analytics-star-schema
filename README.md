@@ -28,7 +28,7 @@ comparable across runs and machines.
 | diagnoses | 40 (real ICD-10) |
 | procedures | 30 (real CPT) |
 | encounters | 300,000 |
-| encounter_diagnoses | 899,976 |
+| encounter_diagnoses | 897,355 |
 | encounter_procedures | 750,000 |
 | billing | 300,000 |
 
