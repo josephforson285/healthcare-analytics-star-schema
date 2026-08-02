@@ -5,37 +5,51 @@ Four business questions answered against the normalized OLTP schema
 
 MEASUREMENT METHOD
 ------------------
+Dataset      : 300,000 encounters  (sql/02_generate_data.sql)
+Server       : MySQL 8.4.10, InnoDB
+Timing       : median of 5 warm runs, cross-checked with EXPLAIN ANALYZE
+Rows scanned : "estimated" = the optimizer's per-table row estimates from
+               plain EXPLAIN, multiplied along the join order. "Actual" =
+               summed Handler_read_* session counters, which is measured
+               rather than predicted.
+Schema state : exactly as the brief defines it.
+
+
 MEASUREMENT VARIANCE -- READ BEFORE THE NUMBERS BELOW
 ------------------------------------------------------
-Every timing here was re-measured in a second session on the same machine.
-All figures moved by almost exactly 2x -- uniformly, in both the OLTP and
-star columns -- while the query plans and intermediate row counts stayed
-IDENTICAL to the row. That is machine speed varying, not query behaviour.
+These queries were timed three separate times over several hours on the
+same machine, against the same deterministically generated data:
 
-Treat absolute seconds as +/-25% at best. The RATIOS held across both
-sessions (Q1 slower both times; Q3 ~4x faster both times; Q4 ~1.5x both
-times) and the conclusions rest on those, not on any single wall-clock
-figure. Full comparison and the ruled-out hypotheses:
+                  round A       round B       round C
+    Q1             1.12 s        0.56 s        1.10 s
+    Q2            22.56 s        9.71 s       15.37 s
+    Q3             0.80 s        0.40 s        0.77 s
+    Q4             2.05 s        1.00 s        1.91 s
+
+Round B is an outlier -- the machine was briefly in an unusually fast
+state. Rounds A and C, taken hours apart with two independent instruments
+(shell wall-clock and EXPLAIN ANALYZE's own server-side timing, which
+agreed to within 3%), land on effectively the same figures. THE NUMBERS
+REPORTED BELOW ARE ROUND A, corroborated by round C.
+
+Throughout all three rounds the query plans and intermediate row counts
+were IDENTICAL to the row -- Q2 built exactly 2,060,000 intermediate rows
+every time. Only wall-clock moved. That is machine speed varying, not
+query behaviour, which is why the structural evidence (row counts, plan
+shapes) is what the conclusions actually rest on.
+
+Treat absolute seconds as +/-25%. Full comparison, and the buffer-pool
+hypothesis that was tested and ruled out:
 results/measurement_sessions.txt
 
-
-Dataset      : 300,000 encounters / ~2.3M rows total (sql/02_generate_data.sql)
-Server       : MySQL 8.4.10, InnoDB, default buffer pool
-Timing       : median of 3 warm runs; one discarded warm-up run before each
-Row counts   : from EXPLAIN ANALYZE actual rows, retained in
-               results/oltp_explain_analyze.txt
-Schema state : exactly as the brief defines it. No indexes, constraints or
-               hints were added. See docs/00-findings-and-assumptions.md.
-
-IMPORTANT CONTEXT FOR EVERY NUMBER BELOW
+IMPORTANT NOTE
 ----------------------------------------
 InnoDB creates an index on every foreign key column automatically. So
 encounters.patient_id, encounters.provider_id and encounters.department_id
 are all indexed even though the brief never declares them. Three of the
 four queries therefore perform BETTER than the brief's hints imply, and
 the honest bottleneck in those cases is aggregation and join width -- not
-missing indexes. This is stated up front because the temptation in a
-before/after comparison is to overstate the "before".
+missing indexes. 
 
 
 =======================================================================
@@ -63,8 +77,12 @@ Schema Analysis:
 
 Performance:
 - Execution time: 1.12 seconds
-- Peak rows at any plan node: 300,000
-- Total rows processed across all plan nodes: 905,941
+- Estimated rows scanned: 314,880
+    optimizer estimate = 12 specialties x 5 providers each x 5,248
+    encounters each. Actual rows read: 300,147, confirmed via
+    Handler_read_* counters -- the estimate runs about 5% high.
+- Peak rows at any single plan node: 300,000
+- Total rows across all plan nodes: 905,941
 
 Bottleneck Identified:
 
@@ -119,8 +137,14 @@ Schema Analysis:
 
 Performance:
 - Execution time: 22.56 seconds        <-- 20x slower than any other query
-- Peak rows at any plan node: 2,060,000
-- Total rows processed across all plan nodes: 9,011,578
+- Estimated rows scanned: 1,804,160
+    optimizer estimate = 40 diagnoses x 22,552 encounter_diagnoses x 2
+    encounter_procedures x 1 procedure. Actual rows read: 5,807,062,
+    confirmed via Handler_read_* counters -- here the optimizer
+    UNDER-estimates by 3.2x, because it cannot predict how the two
+    junction tables multiply against each other.
+- Peak rows at any single plan node: 2,060,000
+- Total rows across all plan nodes: 9,011,578
 
 Bottleneck Identified:
 
@@ -206,8 +230,14 @@ Schema Analysis:
 
 Performance:
 - Execution time: 0.80 seconds         <-- the FASTEST of the four
-- Peak rows at any plan node: 300,000
-- Total rows processed across all plan nodes: 512,904
+- Estimated rows scanned: 17,772 for the final join stage
+    (12 specialties x 1,481 rows from the flagged CTE). That figure alone
+    is misleading: building the CTE first requires a full scan of
+    encounters (299,178 estimated) plus roughly 5 indexed self-join probes
+    per inpatient discharge. Actual rows read across the whole query:
+    689,786, via Handler_read_* counters.
+- Peak rows at any single plan node: 300,000
+- Total rows across all plan nodes: 512,904
 
 Bottleneck Identified:
 
@@ -276,8 +306,14 @@ Schema Analysis:
 
 Performance:
 - Execution time: 2.05 seconds
-- Peak rows at any plan node: 300,000
-- Total rows processed across all plan nodes: 605,942
+- Estimated rows scanned: 314,880
+    optimizer estimate = 12 specialties x 5 providers x 5,248 encounters
+    x 1 billing row each. Identical to Q1's estimate, because the billing
+    join adds one row per encounter rather than multiplying. Actual rows
+    read: 1,469,827 via Handler_read_* counters -- 4.9x the estimate, and
+    the gap is the 300,000 individual index lookups into billing.
+- Peak rows at any single plan node: 300,000
+- Total rows across all plan nodes: 605,942
 
 Bottleneck Identified:
 
