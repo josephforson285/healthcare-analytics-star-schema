@@ -1,0 +1,324 @@
+=======================================================================
+PART 2 DELIVERABLE -- query_analysis.txt
+Four business questions answered against the normalized OLTP schema
+=======================================================================
+
+MEASUREMENT METHOD
+------------------
+Dataset      : 300,000 encounters / ~2.3M rows total (sql/02_generate_data.sql)
+Server       : MySQL 8.4.10, InnoDB, default buffer pool
+Timing       : median of 3 warm runs; one discarded warm-up run before each
+Row counts   : from EXPLAIN ANALYZE actual rows, retained in
+               results/oltp_explain_analyze.txt
+Schema state : exactly as the brief defines it. No indexes, constraints or
+               hints were added. See docs/00-findings-and-assumptions.md.
+
+IMPORTANT CONTEXT FOR EVERY NUMBER BELOW
+----------------------------------------
+InnoDB creates an index on every foreign key column automatically. So
+encounters.patient_id, encounters.provider_id and encounters.department_id
+are all indexed even though the brief never declares them. Three of the
+four queries therefore perform BETTER than the brief's hints imply, and
+the honest bottleneck in those cases is aggregation and join width -- not
+missing indexes. This is stated up front because the temptation in a
+before/after comparison is to overstate the "before".
+
+
+=======================================================================
+QUESTION 1: Monthly Encounters by Specialty
+=======================================================================
+
+SQL Query:
+
+    SELECT
+        DATE_FORMAT(e.encounter_date, '%Y-%m')  AS month,
+        s.specialty_name,
+        e.encounter_type,
+        COUNT(*)                                AS encounters,
+        COUNT(DISTINCT e.patient_id)            AS unique_patients
+    FROM encounters  e
+    JOIN providers   p ON p.provider_id  = e.provider_id
+    JOIN specialties s ON s.specialty_id = p.specialty_id
+    GROUP BY month, s.specialty_name, e.encounter_type
+    ORDER BY month, s.specialty_name, e.encounter_type;
+
+Schema Analysis:
+- Tables joined: encounters, providers, specialties
+- Number of joins: 2
+- Result rows: 864 (24 months x 12 specialties x 3 encounter types)
+
+Performance:
+- Execution time: 1.12 seconds
+- Peak rows at any plan node: 300,000
+- Total rows processed across all plan nodes: 905,941
+
+Bottleneck Identified:
+
+Three causes, in order of cost.
+
+1. Specialty is two hops from the fact table. There is no specialty on
+   encounters -- you must reach it through providers. That is correct 3NF
+   (specialty is an attribute of the provider, not of the visit) and it is
+   exactly what normalization is supposed to do. It also means every single
+   analytical grouping by specialty pays for a join it does not
+   conceptually need.
+
+2. COUNT(DISTINCT e.patient_id) cannot be computed incrementally. COUNT(*)
+   is a running counter; COUNT(DISTINCT) has to retain the set of patient
+   ids seen per group and deduplicate it. Across 864 groups covering
+   300,000 encounters that is the single largest component of the runtime.
+
+3. DATE_FORMAT(e.encounter_date, '%Y-%m') is a function applied to a
+   column, so idx_encounter_date cannot be used to group by month. MySQL
+   must compute the month string for all 300,000 rows and then sort them.
+   The index exists and is useless for this query -- it can serve a date
+   RANGE filter but not a derived grouping key.
+
+Root cause: the month grain and the specialty attribute both have to be
+DERIVED at query time, on every run, because neither is stored.
+
+
+=======================================================================
+QUESTION 2: Top Diagnosis-Procedure Pairs
+=======================================================================
+
+SQL Query:
+
+    SELECT
+        d.icd10_code,
+        d.icd10_description,
+        pr.cpt_code,
+        pr.cpt_description,
+        COUNT(DISTINCT ed.encounter_id)  AS encounter_count
+    FROM encounter_diagnoses  ed
+    JOIN encounter_procedures ep ON ep.encounter_id = ed.encounter_id
+    JOIN diagnoses            d  ON d.diagnosis_id  = ed.diagnosis_id
+    JOIN procedures           pr ON pr.procedure_id = ep.procedure_id
+    GROUP BY d.icd10_code, d.icd10_description, pr.cpt_code, pr.cpt_description
+    ORDER BY encounter_count DESC
+    LIMIT 20;
+
+Schema Analysis:
+- Tables joined: encounter_diagnoses, encounter_procedures, diagnoses, procedures
+- Number of joins: 3
+- Result rows: 20 (from 1,200 distinct pairs)
+
+Performance:
+- Execution time: 22.56 seconds        <-- 20x slower than any other query
+- Peak rows at any plan node: 2,060,000
+- Total rows processed across all plan nodes: 9,011,578
+
+Bottleneck Identified:
+
+This is the row explosion, and EXPLAIN ANALYZE quantifies it precisely:
+
+    -> Limit: 20 row(s)                    (actual time=21502..21502 rows=20)
+      -> Sort: encounter_count DESC        (actual time=21502..21502 rows=20)
+        -> Group aggregate: count(distinct ...) (actual time=19191..21501 rows=1200)
+          -> Sort: d.icd10_code, ...       (actual time=19190..19379 rows=2.06e+6)
+            -> Nested loop inner join      (actual time=9.68..14433  rows=2.06e+6)
+
+Read it bottom-up. The join of 858,360 diagnosis rows to 721,035 procedure
+rows on encounter_id materialises 2,060,000 intermediate rows -- because an
+encounter with 3 diagnoses and 3 procedures produces 3 x 3 = 9 pair rows.
+Those 2.06M rows are then SORTED so they can be grouped. The sort alone
+accounts for roughly 19 of the 22.5 seconds.
+
+2,060,000 rows built and sorted, to return 20.
+
+The deeper point is that this is not primarily a performance problem. Two
+independent many-to-many relationships hang off the same parent, so joining
+both at once changes the grain of the result set from "one row per
+encounter" to "one row per diagnosis-procedure pair". Any additive measure
+summed in this shape is silently multiplied:
+
+    SELECT SUM(allowed_amount) with both junctions joined -> $6,276.6M
+    SELECT SUM(allowed_amount) from billing alone         ->   $845.8M
+
+A 7.4x overstatement of revenue, from a query that returns no error. This
+query survives only because it uses COUNT(DISTINCT ed.encounter_id) rather
+than COUNT(*), and touches no monetary column at all.
+
+Root cause: the fan trap. It is a correctness failure first and a
+performance failure second, and it is the reason the fact table grain and
+the bridge table decision are the same decision asked twice.
+
+
+=======================================================================
+QUESTION 3: 30-Day Readmission Rate
+=======================================================================
+
+Definition assumed: the index event is an Inpatient discharge; a
+readmission is ANY subsequent encounter by the same patient within 30 days
+of that discharge. The brief says only "return within 30 days" and does not
+restrict the return type -- restricting it to Inpatient only would roughly
+halve the reported rate. Specialty is attributed to the INDEX admission's
+provider, since readmission is a quality measure against the discharging
+team. Recorded in docs/00-findings-and-assumptions.md.
+
+SQL Query:
+
+    WITH index_admissions AS (
+        SELECT e.encounter_id, e.patient_id, e.discharge_date, p.specialty_id
+        FROM encounters e
+        JOIN providers  p ON p.provider_id = e.provider_id
+        WHERE e.encounter_type = 'Inpatient'
+          AND e.discharge_date IS NOT NULL
+    ),
+    flagged AS (
+        SELECT i.encounter_id, i.specialty_id,
+               MAX(r.encounter_id IS NOT NULL) AS readmitted
+        FROM index_admissions i
+        LEFT JOIN encounters  r
+               ON  r.patient_id     =  i.patient_id
+               AND r.encounter_id  <>  i.encounter_id
+               AND r.encounter_date >  i.discharge_date
+               AND r.encounter_date <= i.discharge_date + INTERVAL 30 DAY
+        GROUP BY i.encounter_id, i.specialty_id
+    )
+    SELECT s.specialty_name,
+           COUNT(*)                                     AS inpatient_discharges,
+           SUM(f.readmitted)                            AS readmissions_30d,
+           ROUND(100 * SUM(f.readmitted) / COUNT(*), 2) AS readmission_rate_pct
+    FROM flagged     f
+    JOIN specialties s ON s.specialty_id = f.specialty_id
+    GROUP BY s.specialty_name
+    ORDER BY readmission_rate_pct DESC;
+
+Schema Analysis:
+- Tables joined: encounters (twice -- self-join), providers, specialties
+- Number of joins: 3 (one of which is a self-join)
+- Result rows: 12
+
+Performance:
+- Execution time: 0.80 seconds         <-- the FASTEST of the four
+- Peak rows at any plan node: 300,000
+- Total rows processed across all plan nodes: 512,904
+
+Bottleneck Identified:
+
+The prediction here was wrong and it is worth recording why.
+
+The expectation, following the brief's hint ("self-joins on large tables"),
+was that this would be the most expensive query. It is the cheapest. The
+reason is the automatically created foreign key index on
+encounters.patient_id. The self-join's driving predicate is an equality on
+patient_id, so each of the ~30,000 inpatient discharges becomes a cheap
+indexed lookup returning that patient's handful of encounters -- roughly 6
+on average. The 30-day date range is then evaluated against those few rows
+in memory.
+
+That is ~30,000 index probes, not a 300,000 x 300,000 comparison. The
+quadratic blow-up the hint anticipates never happens.
+
+It WOULD happen if patient_id were unindexed. That exact failure mode was
+encountered accidentally while building this dataset: a self-join DELETE on
+encounter_diagnoses joining on (encounter_id, diagnosis_id) -- a pair no
+index covers -- ran past ten minutes on 897k rows before being killed.
+Same shape, no usable index, and the difference is minutes versus
+sub-second. See finding A4.
+
+So the honest bottleneck here is: none worth reporting. The query is
+already fast, and the star schema will not improve it dramatically. Saying
+so is more useful than manufacturing a speedup.
+
+Result (top 3 of 12):
+    Nephrology         2,527 discharges   568 readmissions   22.48%
+    Internal Medicine  2,433 discharges   535 readmissions   21.99%
+    Cardiology         2,523 discharges   551 readmissions   21.84%
+
+
+=======================================================================
+QUESTION 4: Revenue by Specialty & Month
+=======================================================================
+
+Two modelling choices, both stated rather than assumed:
+- Grouped on ENCOUNTER date, not claim date. Revenue belongs to the period
+  care was delivered, not the period the paperwork cleared. Claims land
+  1-20 days after discharge here, so grouping on claim_date would push a
+  material share of December revenue into January.
+- Sums allowed_amount, not claim_amount. The allowed amount is what the
+  payer contract actually permits and is the honest revenue figure; the
+  claim amount is the opening ask.
+
+SQL Query:
+
+    SELECT
+        DATE_FORMAT(e.encounter_date, '%Y-%m')   AS month,
+        s.specialty_name,
+        COUNT(*)                                 AS claims,
+        ROUND(SUM(b.allowed_amount), 2)          AS total_allowed
+    FROM billing     b
+    JOIN encounters  e ON e.encounter_id  = b.encounter_id
+    JOIN providers   p ON p.provider_id   = e.provider_id
+    JOIN specialties s ON s.specialty_id  = p.specialty_id
+    GROUP BY month, s.specialty_name
+    ORDER BY month, s.specialty_name;
+
+Schema Analysis:
+- Tables joined: billing, encounters, providers, specialties
+- Number of joins: 3
+- Result rows: 288 (24 months x 12 specialties)
+
+Performance:
+- Execution time: 2.05 seconds
+- Peak rows at any plan node: 300,000
+- Total rows processed across all plan nodes: 605,942
+
+Bottleneck Identified:
+
+The longest join chain of the four: billing -> encounters -> providers ->
+specialties. The measure lives in billing, the date lives in encounters,
+and the grouping attribute lives two hops further on in specialties. Not
+one of those three tables can be skipped, and none of the data is
+co-located.
+
+Cost breakdown:
+- 300,000 billing rows joined to 300,000 encounters on the primary key.
+  This is efficient per row, but it is 300,000 lookups.
+- Two further joins to reach specialty_name. Cheap individually (60 and 12
+  rows), but they widen every intermediate row.
+- DATE_FORMAT again derives the month at query time for all 300,000 rows,
+  so idx_encounter_date cannot help.
+- The 288 output groups then require a sort of the full intermediate set.
+
+Roughly 2x Q1's cost for the same reason plus one extra table in the chain.
+
+Root cause: measure, date and grouping attribute are stored in three
+different tables, which is precisely what normalization prescribes and
+precisely what makes analytical aggregation expensive.
+
+
+=======================================================================
+SUMMARY
+=======================================================================
+
+  Query  Tables  Joins  Time      Peak rows   Primary cause
+  -----  ------  -----  --------  ----------  ----------------------------
+  Q1        3      2     1.12 s      300,000  Derived month + COUNT(DISTINCT)
+  Q2        4      3    22.56 s    2,060,000  Fan trap -- row explosion
+  Q3        4*     3     0.80 s      300,000  None; FK index saves it
+  Q4        4      3     2.05 s      300,000  Longest join chain + derived month
+
+  * encounters appears twice (self-join)
+
+Three patterns account for everything above:
+
+1. ATTRIBUTES ARE FAR FROM FACTS. Specialty is 2 joins from an encounter;
+   in Q4 it is 3. Correct 3NF, and a per-query tax on every analysis.
+
+2. GROUPING KEYS ARE DERIVED, NOT STORED. DATE_FORMAT(...,'%Y-%m') is
+   recomputed for 300,000 rows on every execution of Q1 and Q4, and defeats
+   the one date index the schema has.
+
+3. THE FAN TRAP DOMINATES EVERYTHING ELSE. Q2 alone costs more than the
+   other three combined by a factor of seven, and is the only query where
+   the schema can silently produce a WRONG answer rather than a slow one.
+
+What is deliberately NOT claimed: that this schema is badly built. It is a
+sound OLTP design. Every property that makes it slow here -- data stored
+exactly once, attributes owned by the entity they describe, integrity
+enforced by foreign keys -- is a property you want on the write path of a
+clinical system. The star schema in Part 3 does not fix a broken database.
+It builds a second representation of the same data, optimised for the
+opposite access pattern.
