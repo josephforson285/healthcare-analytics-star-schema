@@ -110,7 +110,7 @@ SELECT
 FROM flagged     f
 JOIN specialties s ON s.specialty_id = f.specialty_id
 GROUP BY s.specialty_name
-ORDER BY readmission_rate_pct DESC;
+ORDER BY readmission_rate_pct DESC, s.specialty_name;
 
 
 -- ---------------------------------------------------------------------

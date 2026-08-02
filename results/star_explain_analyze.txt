@@ -1,0 +1,72 @@
+==============================================================
+S1  --  EXPLAIN ANALYZE against healthcare_dw (star schema)
+==============================================================
+-> Group aggregate: sum(fact_encounters.encounter_count), count(distinct fact_encounters.patient_key)  (actual time=1381..1585 rows=864 loops=1)
+    -> Sort: d.calendar_month, pr.specialty_name, f.encounter_type  (actual time=1380..1407 rows=300000 loops=1)
+        -> Stream results  (cost=166064 rows=455329) (actual time=0.439..1099 rows=300000 loops=1)
+            -> Nested loop inner join  (cost=166064 rows=455329) (actual time=0.426..1004 rows=300000 loops=1)
+                -> Inner hash join (no condition)  (cost=6699 rows=66856) (actual time=0.273..5.92 rows=66856 loops=1)
+                    -> Covering index scan on d using idx_year_month  (cost=1.91 rows=1096) (actual time=0.0702..0.662 rows=1096 loops=1)
+                    -> Hash
+                        -> Covering index scan on pr using idx_specialty  (cost=6.35 rows=61) (actual time=0.0636..0.139 rows=61 loops=1)
+                -> Index lookup on f using idx_date_provider (date_key=d.date_key, provider_key=pr.provider_key)  (cost=1.7 rows=6.81) (actual time=0.0126..0.0145 rows=4.49 loops=66856)
+
+
+==============================================================
+S2  --  EXPLAIN ANALYZE against healthcare_dw (star schema)
+==============================================================
+-> Limit: 20 row(s)  (cost=604 rows=20) (actual time=0.073..0.198 rows=20 loops=1)
+    -> Nested loop inner join  (cost=604 rows=20) (actual time=0.0721..0.195 rows=20 loops=1)
+        -> Nested loop inner join  (cost=302 rows=20) (actual time=0.0634..0.125 rows=20 loops=1)
+            -> Covering index scan on a using idx_count  (cost=0.101 rows=20) (actual time=0.0427..0.0493 rows=20 loops=1)
+            -> Single-row index lookup on dp using PRIMARY (procedure_key=a.procedure_key)  (cost=0.25 rows=1) (actual time=0.00335..0.00339 rows=1 loops=20)
+        -> Single-row index lookup on dd using PRIMARY (diagnosis_key=a.diagnosis_key)  (cost=0.25 rows=1) (actual time=0.00306..0.0031 rows=1 loops=20)
+
+
+==============================================================
+S2b  --  EXPLAIN ANALYZE against healthcare_dw (star schema)
+==============================================================
+-> Nested loop inner join  (cost=12.6 rows=0) (actual time=6417..6417 rows=20 loops=1)
+    -> Nested loop inner join  (cost=7.6 rows=0) (actual time=6417..6417 rows=20 loops=1)
+        -> Sort: x.encounter_count DESC  (cost=2.6..2.6 rows=0) (actual time=6417..6417 rows=20 loops=1)
+            -> Table scan on x  (cost=2.5..2.5 rows=0) (actual time=6417..6417 rows=20 loops=1)
+                -> Materialize  (cost=0..0 rows=0) (actual time=6417..6417 rows=20 loops=1)
+                    -> Limit: 20 row(s)  (actual time=6417..6417 rows=20 loops=1)
+                        -> Sort: encounter_count DESC, limit input to 20 row(s) per chunk  (actual time=6417..6417 rows=20 loops=1)
+                            -> Stream results  (actual time=5758..6417 rows=1200 loops=1)
+                                -> Group aggregate: count(distinct bridge_encounter_diagnoses.encounter_key)  (actual time=5758..6416 rows=1200 loops=1)
+                                    -> Sort: bd.diagnosis_key, bp.procedure_key  (actual time=5750..5846 rows=2.06e+6 loops=1)
+                                        -> Stream results  (cost=900138 rows=1.72e+6) (actual time=6.81..4759 rows=2.06e+6 loops=1)
+                                            -> Nested loop inner join  (cost=900138 rows=1.72e+6) (actual time=6.81..4422 rows=2.06e+6 loops=1)
+                                                -> Covering index scan on bp using idx_px  (cost=68350 rows=656834) (actual time=6.15..206 rows=721035 loops=1)
+                                                -> Covering index lookup on bd using PRIMARY (encounter_key=bp.encounter_key)  (cost=1 rows=2.62) (actual time=0.00458..0.00551 rows=2.86 loops=721035)
+        -> Single-row index lookup on dp using PRIMARY (procedure_key=x.procedure_key)  (cost=0.255 rows=1) (actual time=0.00283..0.00286 rows=1 loops=20)
+    -> Single-row index lookup on dd using PRIMARY (diagnosis_key=x.diagnosis_key)  (cost=0.255 rows=1) (actual time=0.00102..0.00105 rows=1 loops=20)
+
+
+==============================================================
+S3  --  EXPLAIN ANALYZE against healthcare_dw (star schema)
+==============================================================
+-> Sort: readmission_rate_pct DESC, pr.specialty_name  (actual time=185..185 rows=12 loops=1)
+    -> Table scan on <temporary>  (actual time=185..185 rows=12 loops=1)
+        -> Aggregate using temporary table  (actual time=185..185 rows=12 loops=1)
+            -> Nested loop inner join  (cost=40809 rows=29831) (actual time=0.285..153 rows=29939 loops=1)
+                -> Filter: (f.is_index_admission = 1)  (cost=30368 rows=29831) (actual time=0.264..113 rows=29939 loops=1)
+                    -> Table scan on f  (cost=30368 rows=298311) (actual time=0.253..98.3 rows=300000 loops=1)
+                -> Single-row index lookup on pr using PRIMARY (provider_key=f.provider_key)  (cost=0.25 rows=1) (actual time=0.00115..0.00117 rows=1 loops=29939)
+
+
+==============================================================
+S4  --  EXPLAIN ANALYZE against healthcare_dw (star schema)
+==============================================================
+-> Sort: d.calendar_month, pr.specialty_name  (actual time=1338..1338 rows=288 loops=1)
+    -> Table scan on <temporary>  (actual time=1338..1338 rows=288 loops=1)
+        -> Aggregate using temporary table  (actual time=1338..1338 rows=288 loops=1)
+            -> Nested loop inner join  (cost=166064 rows=455329) (actual time=0.221..1015 rows=300000 loops=1)
+                -> Inner hash join (no condition)  (cost=6699 rows=66856) (actual time=0.126..6 rows=66856 loops=1)
+                    -> Covering index scan on d using idx_year_month  (cost=1.91 rows=1096) (actual time=0.0368..0.567 rows=1096 loops=1)
+                    -> Hash
+                        -> Covering index scan on pr using idx_specialty  (cost=6.35 rows=61) (actual time=0.0366..0.0667 rows=61 loops=1)
+                -> Index lookup on f using idx_date_provider (date_key=d.date_key, provider_key=pr.provider_key)  (cost=1.7 rows=6.81) (actual time=0.0127..0.0147 rows=4.49 loops=66856)
+
+
