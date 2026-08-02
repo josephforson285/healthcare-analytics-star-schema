@@ -24,6 +24,7 @@ cp docs/reflection.md             submission/reflection.md
 
 # Supporting material -- not required by the brief, but every deliverable
 # above cites it, so a marker reading only submission/ should have it.
+cp docs/approach.md                    submission/approach.md
 cp docs/00-findings-and-assumptions.md submission/findings-and-assumptions.md
 cp sql/01_oltp_schema.sql         submission/oltp_schema.sql
 cp sql/02_generate_data.sql       submission/generate_data.sql
@@ -47,6 +48,7 @@ The six required deliverables:
 
 Supporting material, cited by the above:
 
+  approach.md                   how each part of the brief was approached, and why
   findings-and-assumptions.md   every source-schema defect and every stated
                                 deviation from the brief, with its disposition
   oltp_schema.sql               the brief's schema, reproduced unaltered
