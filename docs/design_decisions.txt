@@ -75,12 +75,19 @@ dim_patient  (SCD Type 2 structure)
 
 
 -----------------------------------------------------------------------
-dim_provider  (SCD Type 2 structure) -- SPECIALTY FLATTENED 
+dim_provider  (SCD Type 2 structure)
 -----------------------------------------------------------------------
   provider_key INT PK, provider_id, full_name, credential,
-  specialty_id, specialty_name, specialty_code,          <-- flattened
-  home_department_id, home_department_name,              <-- flattened
+  specialty_id, home_department_id,        <-- IDs only, for SCD2 hashing
   effective_from, effective_to, is_current
+
+  The specialty and department NAMES are not held here. They live in
+  dim_specialty and dim_department, which the fact reaches directly via
+  specialty_key and department_key. A duplicate copy here removed no join
+  -- all three dimensions are one hop from the fact -- and drifted when a
+  specialty was renamed, because the hash covers specialty_id not
+  specialty_name. The IDs stay because a provider moving specialty or
+  department is a real change that must open a new version.
 
 
 -----------------------------------------------------------------------
@@ -100,10 +107,6 @@ dim_specialty  (SCD Type 1)
 dim_encounter_type  (SCD Type 1)
 -----------------------------------------------------------------------
   encounter_type_key INT PK, type_name, is_emergency, is_overnight
-
-  Only three rows. It earns its place by closing the attribute domain --
-  the source column is free-text with no CHECK (finding B4) -- and by
-  giving is_emergency / is_overnight somewhere to live.
 
 
 -----------------------------------------------------------------------

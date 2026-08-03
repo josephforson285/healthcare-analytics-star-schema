@@ -95,7 +95,7 @@ SUBSEQUENT LOADS -- how updates are handled
   never fire for it -- the value would simply rot. Age at the time of care
   is computed once, at fact load, and stored on the fact row.
 
-1.3 dim_provider -- SCD Type 2, with specialty and department flattened
+1.3 dim_provider -- SCD Type 2, own attributes only
 ------------------------------------------------------------------------
 Same hash-and-version mechanism as dim_patient, over:
 

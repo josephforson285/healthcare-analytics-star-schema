@@ -61,7 +61,7 @@ design later becomes almost mechanical.
 |---|---|---|
 | `patients` | one person | `dim_patient` |
 | `specialties`, `departments`, `diagnoses`, `procedures` | one reference concept | dimensions, nearly as-is |
-| `providers` | one clinician, with a hierarchy hanging off it | `dim_provider` (flattened) |
+| `providers` | one clinician, with a hierarchy hanging off it | `dim_provider` + `dim_specialty` + `dim_department` |
 | `encounters` | **one visit — the transaction** | `fact_encounters` |
 | `encounter_diagnoses` | one diagnosis on a visit | **junction / many-to-many** |
 | `encounter_procedures` | one procedure on a visit | **a second, independent many-to-many** |

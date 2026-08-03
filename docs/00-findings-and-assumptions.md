@@ -99,13 +99,22 @@ why the ETL design compares hashes rather than trusting a modification date.
 |---|---|---|
 | C1 | Sample `INSERT INTO billing` precedes `INSERT INTO encounters`, referencing encounters 7001/7002 that do not exist yet. With foreign keys enforced the brief's own script fails. | Load order corrected; superseded by generated data |
 | C2 | Sample data is 4 encounters — unmeasurable. The bottlenecks the brief asks us to find are asymptotic. | Generated 300,000 encounters (~2.3M rows), seeded for reproducibility |
-| C3 | Part 3.2 asks for `specialty` inside `dim_provider` **and** a separate `dim_specialty`. Holding both is snowflaking — the opposite of a star schema. | Specialty flattened into `dim_provider`; `dim_specialty` dropped. Justified in `design_decisions.txt` |
-| C4 | `dim_encounter_type` holds 3 values. A dimension that small buys a join and nothing else. | Kept as a degenerate attribute on the fact row |
+| C3 | Part 3.2 asks for `specialty` inside `dim_provider` **and** a separate `dim_specialty`. | Both built. `dim_specialty` is joined directly from the fact via `specialty_key`, so it is a star point, not a snowflake. The duplicate `specialty_name` on `dim_provider` was removed: it saved no join and drifted on rename. See `design_decisions.txt` |
+| C4 | `dim_encounter_type` holds only 3 values. | Built. It closes the free-text domain of B4 and carries `is_emergency` / `is_overnight`, which have no home on the fact row. The four business queries still read `encounter_type` off the fact — joining the dimension for the name alone measured 2.5x slower (3.68s vs 1.49s) |
 | C5 | Part 3.3 asks for execution time *estimates*. | Measured instead, with `EXPLAIN ANALYZE` output retained in `results/` |
 
-C3 and C4 are deliberate departures from the brief's suggested table list. Both
-are defended on Kimball grounds in `design_decisions.txt`; neither is a
-shortcut, and both cost more explanation than simply complying would have.
+C3 and C4 were initially resolved by NOT building the two dimensions, on the
+argument that the brief's own list was internally inconsistent. That argument was
+overconfident: snowflaking is specifically `fact -> dim_provider ->
+dim_specialty`, and a fact carrying `specialty_key` directly makes
+`dim_specialty` an ordinary star point. Both dimensions are now built.
+
+What survived the reversal is narrower and better evidenced: the duplicate
+`specialty_name` on `dim_provider` was removed, because it eliminated no join
+(all three dimensions sit one hop from the fact) and it drifted on rename, since
+the SCD2 hash covers `specialty_id` rather than `specialty_name`. Duplicating a
+label across two dimensions is not the same pattern as collapsing a hierarchy
+into one, and only the latter is a Kimball recommendation.
 
 ---
 

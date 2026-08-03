@@ -98,19 +98,34 @@ CREATE TABLE dim_patient (
 ) ENGINE=InnoDB COMMENT='Patient dimension, SCD Type 2';
 
 -- ---------------------------------------------------------------------
--- dim_provider -- SCD Type 2, WITH SPECIALTY AND DEPARTMENT FLATTENED IN.
+-- dim_provider -- SCD Type 2. Holds the provider's OWN attributes only.
 --
--- The brief asks for specialty inside this table AND as its own
--- dim_specialty. Both are built, and the duplication is intentional.
+-- specialty_name, specialty_code and home_department_name were originally
+-- carried here as well, denormalised, on the argument that a query already
+-- joining dim_provider would then avoid a second join. That argument was
+-- wrong, and it is worth recording why.
 --
--- What WOULD be a snowflake is making dim_provider the only route to the
--- specialty -- fact -> dim_provider -> dim_specialty. That is avoided:
--- the fact carries specialty_key directly, so dim_specialty is its own
--- star point, and specialty_name is additionally denormalised here so a
--- query that has already joined dim_provider needs no second join.
+-- The fact table carries provider_key, specialty_key AND department_key
+-- independently. So a query wanting all three names joins all three
+-- dimensions DIRECTLY off the fact -- one hop each. There was never a
+-- "second hop" to save, which means the duplicated columns removed no
+-- join at all. They were redundancy, not denormalisation.
 --
--- Three of the four business questions group by specialty, so removing a
--- join from that path is worth duplicating one VARCHAR across 60 rows.
+-- Those are different things and only one of them is a Kimball pattern:
+--     collapsing a HIERARCHY into ONE dimension   -> removes real joins
+--     the SAME attribute in TWO dimensions        -> removes nothing
+-- The test is simply whether the duplicate copy eliminates a join. Here
+-- it did not.
+--
+-- It also actively drifted. The SCD2 hash below covers specialty_ID, not
+-- specialty_NAME, so renaming a specialty in the source left this table
+-- stale while dim_specialty updated -- two tables giving two different
+-- answers to the same question, with no error raised.
+--
+-- specialty_id and home_department_id are KEPT. They earn their place in
+-- the change-detection hash: a provider genuinely moving specialty or
+-- department is a real historical event that must create a new version.
+-- It is the redundant LABELS that are gone, not the relationships.
 -- ---------------------------------------------------------------------
 CREATE TABLE dim_provider (
     provider_key         INT AUTO_INCREMENT PRIMARY KEY,
@@ -119,21 +134,17 @@ CREATE TABLE dim_provider (
     last_name            VARCHAR(100),
     full_name            VARCHAR(220),
     credential           VARCHAR(20),
-    -- flattened from specialties
+    -- relationships kept for SCD2 change detection; names live in their
+    -- own dimensions (dim_specialty, dim_department)
     specialty_id         INT,
-    specialty_name       VARCHAR(100),
-    specialty_code       VARCHAR(10),
-    -- flattened from departments (the provider's HOME department)
     home_department_id   INT,
-    home_department_name VARCHAR(100),
     effective_from       DATE    NOT NULL DEFAULT '1900-01-01',
     effective_to         DATE    NOT NULL DEFAULT '9999-12-31',
     is_current           TINYINT NOT NULL DEFAULT 1,
     row_hash             CHAR(32),
     KEY idx_provider_id (provider_id),
-    KEY idx_current (provider_id, is_current),
-    KEY idx_specialty (specialty_name)
-) ENGINE=InnoDB COMMENT='Provider dimension with specialty flattened in (SCD2)';
+    KEY idx_current (provider_id, is_current)
+) ENGINE=InnoDB COMMENT='Provider dimension, SCD Type 2; own attributes only';
 
 -- ---------------------------------------------------------------------
 -- dim_department -- SCD Type 1.

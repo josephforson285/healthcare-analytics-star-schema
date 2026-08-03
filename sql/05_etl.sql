@@ -112,27 +112,35 @@ COMMIT;
 
 
 -- =====================================================================
--- 3. dim_provider -- specialty and department FLATTENED IN (no snowflake).
+-- 3. dim_provider -- the provider's OWN attributes only.
 --
--- LEFT JOINs, not inner: specialty_id and department_id are nullable in
--- the source (GUARD B1), and an inner join would silently drop providers
--- whose specialty was never recorded -- taking all their encounters with
--- them.
+-- specialty_name / specialty_code / home_department_name are deliberately
+-- NOT loaded here. They live in dim_specialty and dim_department, which
+-- the fact reaches directly via specialty_key and department_key. Holding
+-- a second copy on this table removed no join (all three dimensions are
+-- one hop from the fact) and drifted when a specialty was renamed, since
+-- the hash below covers specialty_ID rather than specialty_NAME.
+--
+-- specialty_id and home_department_id ARE kept, and are in the hash: a
+-- provider moving specialty or department is a real historical change and
+-- must open a new SCD2 version.
+--
+-- No join to specialties/departments is needed any more, which also
+-- removes the GUARD B1 concern that an inner join here would have dropped
+-- providers with no recorded specialty.
 -- =====================================================================
 INSERT INTO dim_provider (
     provider_key, provider_id, first_name, last_name, full_name, credential,
-    specialty_id, specialty_name, specialty_code,
-    home_department_id, home_department_name,
+    specialty_id, home_department_id,
     effective_from, effective_to, is_current, row_hash)
 VALUES
     (-1, -1, 'Unknown', 'Unknown', 'Unknown Provider', NULL,
-     NULL, 'Unknown', 'UNK', NULL, 'Unknown',
+     NULL, NULL,
      '1900-01-01', '9999-12-31', 1, NULL);
 
 INSERT INTO dim_provider (
     provider_id, first_name, last_name, full_name, credential,
-    specialty_id, specialty_name, specialty_code,
-    home_department_id, home_department_name,
+    specialty_id, home_department_id,
     effective_from, effective_to, is_current, row_hash)
 SELECT
     pr.provider_id,
@@ -142,16 +150,11 @@ SELECT
            IF(pr.credential IS NULL, '', CONCAT(', ', pr.credential))),
     pr.credential,
     pr.specialty_id,
-    COALESCE(s.specialty_name, 'Unknown'),                          -- GUARD B1
-    COALESCE(s.specialty_code, 'UNK'),
     pr.department_id,
-    COALESCE(d.department_name, 'Unknown'),
     '1900-01-01', '9999-12-31', 1,
     MD5(CONCAT_WS('|', pr.first_name, pr.last_name, pr.credential,
                        pr.specialty_id, pr.department_id))
-FROM      healthcare_oltp.providers   pr
-LEFT JOIN healthcare_oltp.specialties s ON s.specialty_id  = pr.specialty_id
-LEFT JOIN healthcare_oltp.departments d ON d.department_id = pr.department_id;
+FROM healthcare_oltp.providers pr;
 COMMIT;
 
 
