@@ -3,12 +3,10 @@ PART 3.1 DELIVERABLE -- design_decisions.txt
 Dimensional model design decisions, with the evidence behind each
 =======================================================================
 
-Every decision below is answered against the Part 2 measurements in
-docs/query_analysis.txt rather than against general principle. Where this
-design departs from the brief's suggested table list, the departure is
-stated and defended rather than made silently.
+Every decision below is answered to later tackle Part 2 measurements in
+docs/query_analysis.txt.
 
-Kimball's four steps, applied in order:
+Kimball's four steps:
   1. Select the business process ..... clinical encounters and their billing
   2. Declare the grain ............... one row per encounter (Decision 1)
   3. Identify the dimensions ......... Decision 2
@@ -23,20 +21,10 @@ CHOICE: Option A -- one row per encounter. fact_encounters = 300,000 rows.
 
 WHY
 
-The evidence is Q2. Joining the two junction tables produced 2,060,000
-intermediate rows from 300,000 encounters, and summing money in that shape
-reported $5,752.3M against a true $838.7M -- a 6.9x overstatement with no
-error raised.
+The evidence is Q2. Joining the two junction tables produced
+intermediate rows from 300,000 encounters. When financial values are aggregated 
+after this row multiplication, totals may be overstated substantially without the database raising an error.
 
-Options B and C bake that defect permanently into the warehouse:
-
-  Option B (one row per diagnosis within an encounter) -> ~858,000 rows.
-  An encounter with 3 diagnoses appears 3 times. SUM(allowed_amount) is
-  now wrong by default, for every user, forever. The only correct way to
-  total revenue becomes SUM(DISTINCT ...) or a subquery -- which is to say
-  the obvious query is the wrong query.
-
-  Option C (one row per procedure) -> ~721,000 rows. Same failure.
 
 Encounter grain is also the only grain at which all four business questions
 can be answered:
@@ -49,24 +37,15 @@ can be answered:
 Three of four questions want encounter grain. The fourth is served by
 bridges without dragging the other three down with it.
 
-THE GENERAL RULE THIS ILLUSTRATES
-
-Grain should be the finest level at which the measures are still additive.
-allowed_amount is additive per encounter. It is NOT additive per diagnosis
--- there is no such thing as "the revenue of a diagnosis" when a visit has
-four of them and one bill. Choosing a grain finer than your measures makes
-every measure semi-additive at best and wrong at worst.
-
 
 =======================================================================
 DECISION 2: DIMENSION TABLES
 =======================================================================
 
-Six dimensions. Two of the brief's suggestions are deliberately not built,
-and one is added.
+Six dimensions.
 
 -----------------------------------------------------------------------
-dim_date  (~1,100 rows, one-time load, covers 2023-01-01 .. 2025-12-31)
+dim_date  
 -----------------------------------------------------------------------
   date_key INT PK        -- YYYYMMDD, e.g. 20240612. Human-readable and
                             sorts correctly as an integer.
@@ -78,13 +57,12 @@ dim_date  (~1,100 rows, one-time load, covers 2023-01-01 .. 2025-12-31)
   Q1 and Q4 both spend real time on DATE_FORMAT(encounter_date,'%Y-%m'),
   which recomputes a month string for 300,000 rows on every execution and
   makes idx_encounter_date unusable for grouping. A date dimension stores
-  that string once per day instead of once per encounter -- computed 1,100
-  times at load, not 300,000 times per query. It also supplies calendar
-  attributes SQL cannot derive (fiscal periods, holidays) as the warehouse
-  grows.
+  that string once per day instead of once per encounter. It also supplies calendar
+  attributes SQL cannot derive  as the warehouse grows.
+
 
 -----------------------------------------------------------------------
-dim_patient  (50,000 rows, SCD Type 2 structure)
+dim_patient  (SCD Type 2 structure)
 -----------------------------------------------------------------------
   patient_key INT PK     -- surrogate
   patient_id INT         -- natural key from source
@@ -92,83 +70,34 @@ dim_patient  (50,000 rows, SCD Type 2 structure)
   gender_desc ('Female' / 'Male' / 'Unknown')
   effective_from, effective_to, is_current   -- SCD2 machinery
 
-  NOTE ON AGE: age is deliberately NOT stored here. A patient's age band
-  changes with the calendar, not with any source event, so storing it in
-  the dimension would silently go stale and would corrupt historical
-  reporting. Age at the time of care is a property of the ENCOUNTER, so
-  patient_age_years and patient_age_band live on the fact row (Decision 3).
-  This is the standard Kimball treatment and it is the one place this
-  design differs meaningfully from the brief's hint ("age_group" listed
-  under dim_patient).
+  NOTE ON AGE: age is deliberately NOT stored here.
+
 
 -----------------------------------------------------------------------
-dim_provider  (60 rows, SCD Type 2 structure) -- SPECIALTY FLATTENED IN
+dim_provider  (SCD Type 2 structure) -- SPECIALTY FLATTENED 
 -----------------------------------------------------------------------
   provider_key INT PK, provider_id, full_name, credential,
   specialty_id, specialty_name, specialty_code,          <-- flattened
   home_department_id, home_department_name,              <-- flattened
   effective_from, effective_to, is_current
 
-  *** DEPARTURE FROM THE BRIEF ***
-  Part 3.2 asks for specialty inside dim_provider AND a separate
-  dim_specialty table. Building both is snowflaking -- normalising a
-  dimension back out into sub-tables -- which is precisely what a star
-  schema exists to avoid. dim_specialty is therefore NOT built.
-
-  The cost of complying would be real: every specialty-grouped query (Q1,
-  Q3, Q4 -- three of the four) would pay an extra join to recover an
-  attribute that fits in one VARCHAR column on a 60-row table. The entire
-  saving would be a few kilobytes of duplicated specialty names across 60
-  rows.
-
-  Redundancy in a dimension is not a defect in dimensional modelling. It
-  is the trade being made on purpose.
 
 -----------------------------------------------------------------------
-dim_department  (12 rows, SCD Type 1)
+dim_department  (SCD Type 1)
 -----------------------------------------------------------------------
   department_key INT PK, department_id, department_name, floor, capacity
 
-  Kept as a genuine dimension even though dim_provider already carries the
-  provider's home department. They answer different questions: "which
-  department did this care happen in" (a property of the encounter, and
-  its own FK on encounters) versus "which department does this clinician
-  belong to" (a property of the provider). They are equal in the current
-  dataset, but modelling them as one would make it impossible to represent
-  a cardiologist covering a shift in the ER -- an entirely normal event.
-
+  
 -----------------------------------------------------------------------
-dim_diagnosis  (40 rows) and dim_procedure  (30 rows)
+dim_diagnosis
 -----------------------------------------------------------------------
   diagnosis_key PK, diagnosis_id, icd10_code, icd10_description,
                     icd10_chapter (derived from the code's first letter)
   procedure_key PK, procedure_id, cpt_code, cpt_description,
                     cpt_category (derived from the code range)
 
-  Required by the bridges (Decision 4). The derived chapter/category
-  columns are added because they cost nothing at 40 and 30 rows and they
-  give analysts a roll-up level the source has no table for.
+  Required by the bridges (Decision 4).
 
------------------------------------------------------------------------
-NOT BUILT: dim_encounter_type
------------------------------------------------------------------------
-  *** DEPARTURE FROM THE BRIEF ***
-  Three values -- 'Outpatient', 'Inpatient', 'ER'. A dimension table this
-  small buys a join and returns nothing: no hierarchy, no additional
-  attributes, no roll-up. encounter_type is stored directly on the fact
-  row as a DEGENERATE dimension.
-
-  Same treatment for claim_status ('Paid' / 'Pending' / 'Denied') and for
-  encounter_id itself, which is the classic degenerate dimension -- a
-  natural key with no attributes of its own, kept on the fact for
-  drill-through back to the source system.
-
-SUMMARY OF DEPARTURES
-  dim_specialty ....... dropped, flattened into dim_provider (anti-snowflake)
-  dim_encounter_type .. dropped, kept as a degenerate attribute
-  age_group ........... moved from dim_patient to the fact row (time-variance)
-  dim_diagnosis ....... added (the brief lists it only as a question)
-  dim_procedure ....... added (same)
 
 
 =======================================================================
@@ -207,10 +136,6 @@ JUSTIFICATION, measure by measure
   billing -> encounters before it can sum anything. Here the money is
   already on the encounter row.
 
-  Note this also defends against source defect B7: billing.encounter_id is
-  not UNIQUE, so a double-billed encounter would be double-counted by a
-  naive join. The ETL aggregates billing to encounter grain, so the defect
-  is neutralised once at load rather than in every query.
 
   is_readmission_30d
   The single highest-value precomputation here. Q3's entire self-join --
@@ -218,16 +143,13 @@ JUSTIFICATION, measure by measure
   the ETL, and the answer is stored as a flag. Q3 collapses to a GROUP BY
   over a stored column.
 
-  This is the real lesson of the whole exercise: the star schema is not
-  faster because stars are magic. It is faster because the expensive work
+  This is the real lesson of the whole. It is faster because the expensive work
   was moved from query time to load time, where it happens once a day
   instead of once per analyst per question.
 
   length_of_stay_minutes
   TIMESTAMPDIFF on every row at query time, replaced by a stored integer.
-  Also the place to enforce source defect B8 -- nothing in the OLTP schema
-  prevents discharge_date < encounter_date, so the ETL rejects negative
-  values rather than propagating them.
+ 
 
   patient_age_years
   As above: time-variant, so it belongs to the event, not the person.
@@ -238,13 +160,6 @@ JUSTIFICATION, measure by measure
   queries avoid the bridge completely. Encounters with secondary diagnoses
   still have them in the bridge; this is a shortcut for the common case,
   not a replacement.
-
-WHAT IS DELIBERATELY NOT PRE-AGGREGATED
-  No monthly or specialty-level totals are stored on the fact table.
-  Those are roll-ups of the fact, not properties of an encounter, and
-  storing them would violate the declared grain. Where a roll-up genuinely
-  needs to be materialised, it belongs in a separate aggregate table --
-  which is exactly what agg_diagnosis_procedure_pair is (Decision 4).
 
 
 =======================================================================
@@ -260,67 +175,6 @@ DECISION: Yes. Two bridges, plus one aggregate table.
 
 WHY BRIDGES ARE NECESSARY
 
-The alternative is denormalising diagnoses and procedures into the fact
-table, and there are only two ways to do that, both bad:
-
-  (a) Repeating groups -- diagnosis_1, diagnosis_2, ... diagnosis_5.
-      Breaks the moment a patient presents with six. Makes "how many
-      encounters involved hypertension" a five-way OR across five columns.
-      This is a First Normal Form violation, and 1NF is not something a
-      star schema licenses you to abandon.
-
-  (b) Change the grain to diagnosis level -- which is Decision 1's Option
-      B, and reintroduces the exact 6.9x revenue inflation measured in Q2.
-
-A bridge keeps the many-to-many where it belongs: outside the fact table,
+A bridge keeps the many-to-many where it belongs. Outside the fact table,
 at its own grain, joined only by queries that actually need codes.
 
-THE TRADE-OFF, STATED HONESTLY
-
-Bridges do not eliminate the fan trap. They relocate it. A query joining
-both bridges still produces ~2.06M rows, because pairing diagnoses with
-procedures inherently produces pairs -- that is the question Q2 asks, and
-no schema can answer it without forming them.
-
-What bridges DO buy:
-  - The fan is opt-in. It happens only in queries that join a bridge.
-    Q1, Q3 and Q4 never touch one and cannot be affected.
-  - The rows are narrow. Bridge rows are 3-4 integers; the OLTP junction
-    join dragged VARCHAR(200) descriptions through the sort. Sorting 2M
-    narrow rows is far cheaper than sorting 2M wide ones.
-  - No measure is reachable. Money lives on the fact table, which the
-    bridge-to-bridge join does not include. The 6.9x inflation is
-    structurally unreachable rather than merely discouraged.
-
-That last point is the strongest argument. A schema where the wrong answer
-is impossible to write beats a schema where it is merely documented.
-
-AND THE HONEST ANSWER FOR Q2: AN AGGREGATE TABLE
-
-Even with narrow bridges, forming 2M pairs to return 20 rows is wasteful
-when the question is asked repeatedly. So the ETL also materialises:
-
-  agg_diagnosis_procedure_pair (diagnosis_key, procedure_key,
-                                encounter_count, ...)  -- ~1,200 rows
-
-Q2 then reads 1,200 pre-computed rows instead of building 2,060,000.
-
-This is Kimball's aggregate navigation, and it must be reported honestly:
-the resulting speedup comes from PRECOMPUTATION, not from the star shape.
-Claiming the star schema itself made Q2 fast would be false. What the star
-schema provides is a clean, stable grain to aggregate FROM -- building the
-same table off the OLTP schema would be possible but far more fragile.
-
-WOULD I DO IT DIFFERENTLY IN PRODUCTION?
-
-Three changes:
-
-  1. Add a diagnosis WEIGHTING FACTOR to the bridge (1/n per encounter),
-     the standard Kimball technique for making bridged measures safely
-     allocatable. Not needed for these four questions; needed the moment
-     someone asks "revenue attributable to diabetes".
-  2. Make the bridges SCD-aware if diagnosis coding can be revised after
-     the fact -- clinical coding is frequently amended post-discharge.
-  3. Partition fact_encounters by date_key. At 300,000 rows it is
-     unnecessary; at 300 million it is the difference between a working
-     warehouse and a broken one.
