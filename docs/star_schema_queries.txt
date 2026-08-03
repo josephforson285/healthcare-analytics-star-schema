@@ -314,6 +314,56 @@ arguably the more valuable of the two.
 
 
 =======================================================================
+Q5 (supplementary): what dim_encounter_type is for
+=======================================================================
+
+    SELECT
+        et.type_name, et.is_emergency, et.is_overnight,
+        SUM(f.encounter_count)                        AS encounters,
+        ROUND(AVG(f.length_of_stay_minutes) / 60, 1)  AS avg_stay_hours,
+        ROUND(SUM(f.allowed_amount + f.denied_amount)
+              / SUM(f.encounter_count), 2)            AS avg_revenue_per_encounter
+    FROM fact_encounters     f
+    JOIN dim_encounter_type  et ON et.encounter_type_key = f.encounter_type_key
+    GROUP BY et.type_name, et.is_emergency, et.is_overnight
+    ORDER BY encounters DESC;
+
+Not one of the four business questions. It is here because the four
+questions never join dim_encounter_type, and that needs explaining rather
+than leaving as an apparent oversight.
+
+They read encounter_type straight off the fact row instead, where it also
+lives as a degenerate attribute. That choice is measured, not assumed:
+
+    GROUP BY f.encounter_type   (string already on the fact)   1.49 s
+    GROUP BY et.type_name       (joined from the dimension)    3.68 s
+
+2.5x slower. Grouping on a joined VARCHAR costs more than grouping on one
+already present in the row. For a query that only needs the type's NAME,
+the fact column is strictly the better choice, and the dimension would be
+pure overhead.
+
+So the dimension earns its place a different way. It closes an attribute
+domain the source leaves open -- encounter_type is a free-text VARCHAR(50)
+with no CHECK constraint (finding B4), so 'ER', 'er' and 'Emergency' are
+all storable, and a foreign key to a three-row table makes a fourth value
+impossible rather than merely unlikely. And it gives is_emergency and
+is_overnight somewhere to live; those have no home on the fact row, and
+the query above cannot be written without them.
+
+Result:
+
+    type_name    is_emergency  is_overnight  encounters  avg_stay_hours
+    Outpatient        0             0          210,359        1.4
+    ER                1             0           59,702        6.5
+    Inpatient         0             1           29,939      131.5
+
+A three-row dimension is not automatically over-modelling. It is
+over-modelling when it carries nothing the fact row could not, which is
+the case this one had to answer.
+
+
+=======================================================================
 WHAT THE NUMBERS ACTUALLY SHOW
 =======================================================================
 
