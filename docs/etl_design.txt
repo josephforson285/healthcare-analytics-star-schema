@@ -22,6 +22,37 @@ sql/05_etl.sql is marked with the finding it addresses.
 
 
 =======================================================================
+WHERE EACH OF THE BRIEF'S QUESTIONS IS ANSWERED
+=======================================================================
+
+  1. Dimension load logic
+     How do you populate dim_patient from the patients table? ....... 1.2
+     How do you populate dim_date (one-time load)? .................. 1.1
+     How do you handle updates to dimensions? ....................... 1.2, 1.3
+                                                       (and 1.4 for Type 1)
+
+  2. Fact table load logic
+     For each encounter, how do you look up dimension keys? ......... 2.1
+     How do you calculate pre-aggregated metrics? ................... 2.2
+     How do you handle missing data? ................................ 2.3
+
+  3. Bridge table load logic
+     How do you populate bridge_encounter_diagnoses? ................ 3
+     How do you populate bridge_encounter_procedures? ............... 3
+
+  4. Refresh strategy
+     How often would you load? ...................................... 4.1, 4.2
+     How would you handle late-arriving facts? ...................... 4.4
+
+  Beyond the brief, because the source forces it: 4.3 (incremental with no
+  timestamp available), 4.5 (late-arriving dimensions), 4.6 (failure and
+  restartability), 4.7 (the one source change that would fix all of it).
+
+  dim_date is answered before dim_patient below, because it is the only
+  dimension with no source table and the simplest case to state.
+
+
+=======================================================================
 1. DIMENSION LOAD LOGIC
 =======================================================================
 
@@ -267,17 +298,47 @@ absent.
 Bridges load AFTER the fact table, because they need encounter_key --
 which is assigned by the fact insert.
 
-  bridge_encounter_diagnoses
-      FOR each row in source.encounter_diagnoses:
-          encounter_key := lookup fact_encounters BY encounter_id
-          diagnosis_key := lookup dim_diagnosis BY ICD-10 CODE   GUARD B6
-                           (via source.diagnoses to resolve id -> code)
-          is_principal  := (diagnosis_sequence = 1)
-          INSERT IGNORE                                          GUARD B2
+Q: How do you populate bridge_encounter_diagnoses?
 
-  bridge_encounter_procedures
-      same shape; procedure_date_key resolved to dim_date.
-          INSERT IGNORE                                          GUARD B3
+      FOR each row in source.encounter_diagnoses:
+          encounter_key      := lookup fact_encounters BY encounter_id
+          diagnosis_key      := lookup dim_diagnosis BY ICD-10 CODE  GUARD B6
+                                (joins source.diagnoses first to turn the
+                                 source diagnosis_id into its code)
+          diagnosis_sequence := carried straight through from the source;
+                                1 identifies the principal diagnosis
+          INSERT IGNORE                                             GUARD B2
+
+  858,360 rows in, 858,360 out. Nothing is aggregated -- the bridge grain is
+  one row per diagnosis per encounter, which is the source grain.
+
+  There is deliberately NO is_principal flag. An earlier version carried one,
+  set to (diagnosis_sequence = 1). It was removed: the column beside it already
+  says the same thing, and "WHERE diagnosis_sequence = 1" is no harder to write
+  than "WHERE is_principal = 1".
+
+
+Q: How do you populate bridge_encounter_procedures?
+
+      FOR each row in source.encounter_procedures:
+          encounter_key      := lookup fact_encounters BY encounter_id
+          procedure_key      := lookup dim_procedure BY CPT CODE     GUARD B6
+                                (joins source.procedures to resolve id -> code)
+          procedure_date_key := CAST(FORMAT(procedure_date,'YYYYMMDD') AS INT)
+          INSERT IGNORE                                              GUARD B3
+
+  721,035 rows in, 721,035 out.
+
+  Same shape as the diagnosis bridge with one addition: procedure_date_key.
+  A procedure has its own date, distinct from the encounter's -- during a
+  five-day inpatient stay, procedures happen on different days. That date is a
+  property of the encounter-procedure PAIR, not of the encounter, so it belongs
+  here rather than on the fact.
+
+  Honest note: no query in this project reads procedure_date_key. It survives
+  because it is genuine source data rather than a restatement of a neighbouring
+  column, so the pruning rule applied elsewhere does not catch it. 4 bytes
+  x 721,035 rows, and a real warehouse would want it.
 
 TWO DELIBERATE CHOICES
 
