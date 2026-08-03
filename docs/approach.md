@@ -231,11 +231,25 @@ own dimension is snowflaking. That was overconfident. Snowflaking is specificall
 directly, `dim_specialty` is an ordinary star point and there is nothing wrong
 with it.
 
-The schema now does both: `fact_encounters.specialty_key` joins `dim_specialty`
-directly, and `specialty_name` is *also* denormalised onto `dim_provider`. Both
-paths are one hop from the fact, so neither snowflakes, and a query already
-joining providers avoids a second join. The duplication is the trade dimensional
-modelling makes on purpose.
+`dim_specialty` was then built, and `fact_encounters.specialty_key` joins it
+directly — a proper star point.
+
+**A second correction followed.** `specialty_name` was initially duplicated onto
+`dim_provider` as well, defended as denormalisation that saves a join. It saves
+nothing: the fact carries `provider_key`, `specialty_key` and `department_key`
+independently, so all three dimensions are one hop away and there was never a
+second hop to avoid. It also drifted — the SCD2 hash covers `specialty_id`, not
+`specialty_name`, so renaming a specialty left `dim_provider` stale while
+`dim_specialty` updated. Removed.
+
+**A third correction after that.** Enforced foreign keys were then added from
+`dim_provider` to `dim_specialty` and `dim_department` to close the enforcement
+gap — which created **snowflake edges**, the exact shape argued against
+throughout. Also removed. `dim_provider` now holds only its own attributes, and
+the warehouse has **zero dimension-to-dimension foreign keys**.
+
+Three passes to land on the simple answer, each recorded rather than tidied
+away, because the wrong turns are the part worth reading.
 
 `dim_encounter_type` was likewise omitted at first and is now built. Three rows
 is small, but it closes a free-text domain the source leaves open (finding B4)
