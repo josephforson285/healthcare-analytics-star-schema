@@ -14,17 +14,21 @@ query that a single explanation would be misleading.
 
 | Query | OLTP chain | Star chain |
 |---|---|---|
-| Q1 | encounters → providers → specialties | fact → dim_date, dim_provider |
+| Q1 | encounters → providers → specialties | fact → **dim_specialty only** (12 rows) |
 | Q2 | enc_diagnoses → enc_procedures → diagnoses → procedures | agg table → 2 dims |
-| Q3 | encounters → **encounters** (self-join) → providers → specialties | fact → dim_provider |
-| Q4 | billing → encounters → providers → specialties | fact → dim_date, dim_provider |
+| Q3 | encounters → **encounters** (self-join) → providers → specialties | fact → dim_specialty |
+| Q4 | billing → encounters → providers → specialties | fact → **dim_specialty only** |
 
 The join *count* barely moves — 2–3 joins either way. What changes is what sits
 on the other end. In the OLTP schema, Q4 joins `billing` (300,000 rows) to
 `encounters` (300,000 rows) before it can sum anything. In the star schema the
-money is already on the fact row, and the two remaining joins hit a 1,096-row
-and a 61-row dimension. **Join depth is a poor proxy for cost; the size of what
-you join to is the real variable.**
+money is already on the fact row, and the one remaining join hits a 12-row
+dimension. **Join depth is a poor proxy for cost; the size of what you join to
+is the real variable.**
+
+Note that Q1 and Q4 join **no date dimension at all.** `date_key` is `YYYYMMDD`,
+so `FLOOR(date_key / 100)` yields the month arithmetically. A design choice made
+for readability turned out to remove a join entirely.
 
 ### Where data is pre-computed
 
@@ -231,6 +235,31 @@ The self-join is gone, not optimized — executed once by the ETL and stored as 
 because the OLTP version was already fast: the brief predicted a self-join
 disaster, and InnoDB's automatic FK index on `patient_id` meant it never
 happened. 30,000 indexed probes, not a quadratic scan. The gain is 0.08 seconds.
+
+### Query 4 — 1.081s → 0.189s, 5.72×
+
+The largest genuine gain, and it comes from two separate mechanisms stacking.
+
+**The `billing` join disappears.** In OLTP the money lives in `billing` and the
+date in `encounters`, so 300,000 rows must be joined before anything can be
+summed. The ETL puts `allowed_amount` and `denied_amount` on the encounter row,
+so the query never touches `billing`. That accounts for roughly the first half.
+
+**Integer-first aggregation accounts for the rest** — 3.3× on its own. Grouping
+on `FLOOR(date_key/100)` and `specialty_key` rather than on `calendar_month` and
+`specialty_name` took it from 0.609s to 0.183s. Identical logic to the Q1 rewrite
+below.
+
+**One correctness improvement worth more than the speed.** The ETL splits the
+source's single `allowed_amount` into realisable revenue and denied claims. To
+reproduce the OLTP figure exactly, Q4 has to add them back:
+`754,318,058 + 84,420,895 = 838,738,953`.
+
+Which means the OLTP query had been **counting $84.4M of rejected claims as
+revenue** — silently, with no error. Nobody writing that query would have
+noticed, because the source column is simply called `allowed_amount`. The star
+schema can now report realisable revenue, denied revenue and denial rate by
+specialty without referencing `claim_status` at all.
 
 ### Query 1 — the one that was slower, and why it no longer is
 
