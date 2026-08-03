@@ -75,18 +75,21 @@ TWO THINGS TO READ FIRST
    byte-identical on every run and on every machine, and the timings are
    reproducible.
 
-2. THREE DELIBERATE DEPARTURES FROM THE BRIEF'S TABLE LIST.
+2. ONE DELIBERATE DEPARTURE FROM THE BRIEF'S COLUMN HINTS.
 
-   Each is defended in design_decisions.txt rather than made silently:
+   All six dimensions the brief lists are built, plus dim_diagnosis and
+   dim_procedure which the bridge tables require. The one difference:
 
-   - dim_specialty is NOT built. Part 3.2 asks for specialty inside
-     dim_provider AND as its own dimension; holding both is snowflaking,
-     which is what a star schema exists to avoid.
-   - dim_encounter_type is NOT built. Three values, no hierarchy, no
-     attributes. Kept as a degenerate dimension on the fact row.
    - age_group is on the fact row, not dim_patient. Age changes with the
      calendar rather than with any source event, so storing it in the
-     dimension would go stale and corrupt historical reporting.
+     dimension would go stale and corrupt historical reporting. Age at
+     the time of care is a property of the encounter.
+
+   Note on dim_specialty: it is joined DIRECTLY from the fact via
+   specialty_key, and specialty_name is ALSO denormalised onto
+   dim_provider. Both are one hop from the fact, so neither path is a
+   snowflake -- what would snowflake is making dim_provider the only
+   route to the specialty. Reasoning in design_decisions.txt.
 
 
 REPRODUCING THE RESULTS

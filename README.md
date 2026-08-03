@@ -122,16 +122,17 @@ records every source defect and stated deviation with its disposition, and
 [results/](results/) holds the raw `EXPLAIN ANALYZE` output behind every timing
 claim.
 
-## Departures from the brief
+## Departure from the brief
 
-Three, each defended in `design_decisions.txt` rather than made silently:
+All six dimensions the brief lists are built, plus `dim_diagnosis` and
+`dim_procedure` which the bridge tables require. One deliberate difference:
 
-- **`dim_specialty` not built.** The brief asks for specialty inside
-  `dim_provider` *and* as its own dimension. Holding both is snowflaking, which
-  is what a star schema exists to avoid. Specialty is flattened into
-  `dim_provider`; three of the four queries group by it.
-- **`dim_encounter_type` not built.** Three values, no hierarchy, no attributes.
-  Kept as a degenerate dimension on the fact row.
-- **`age_group` moved to the fact row.** Age changes with the calendar rather
-  than with any source event, so storing it in `dim_patient` would go stale and
-  corrupt historical reporting.
+- **`age_group` lives on the fact row, not `dim_patient`.** Age changes with
+  the calendar rather than with any source event, so a value stored in the
+  dimension would go stale and corrupt historical reporting. Age at the time of
+  care is a property of the encounter.
+
+`dim_specialty` is joined **directly from the fact** via `specialty_key`, while
+`specialty_name` is also denormalised onto `dim_provider`. Both are one hop from
+the fact, so neither path snowflakes; the duplication removes a join in either
+direction. Reasoning in `design_decisions.txt`.

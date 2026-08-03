@@ -42,7 +42,8 @@ bridges without dragging the other three down with it.
 DECISION 2: DIMENSION TABLES
 =======================================================================
 
-Six dimensions.
+Eight dimensions -- the six the brief lists, plus dim_diagnosis and
+dim_procedure which the bridges require.
 
 -----------------------------------------------------------------------
 dim_date  
@@ -87,7 +88,24 @@ dim_department  (SCD Type 1)
 -----------------------------------------------------------------------
   department_key INT PK, department_id, department_name, floor, capacity
 
-  
+
+-----------------------------------------------------------------------
+dim_specialty  (SCD Type 1)
+-----------------------------------------------------------------------
+  specialty_key INT PK, specialty_id, specialty_name, specialty_code
+
+
+
+-----------------------------------------------------------------------
+dim_encounter_type  (SCD Type 1)
+-----------------------------------------------------------------------
+  encounter_type_key INT PK, type_name, is_emergency, is_overnight
+
+  Only three rows. It earns its place by closing the attribute domain --
+  the source column is free-text with no CHECK (finding B4) -- and by
+  giving is_emergency / is_overnight somewhere to live.
+
+
 -----------------------------------------------------------------------
 dim_diagnosis
 -----------------------------------------------------------------------
@@ -106,7 +124,8 @@ DECISION 3: PRE-AGGREGATED METRICS ON THE FACT TABLE
 
 FOREIGN KEYS
   date_key, discharge_date_key, patient_key, provider_key,
-  department_key, principal_diagnosis_key
+  department_key, specialty_key, encounter_type_key,
+  principal_diagnosis_key
 
 DEGENERATE DIMENSIONS
   encounter_id, encounter_type, claim_status

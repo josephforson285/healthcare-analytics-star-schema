@@ -211,16 +211,30 @@ and one bill.
 > *"Date dimension… Patient dimension… Provider dimension… Specialty dimension…
 > Department dimension… Encounter type dimension… Others?"*
 
-Six built. **Three deliberate departures from this list**, each defended rather
-than made silently:
+All six built, plus `dim_diagnosis` and `dim_procedure` which the bridges
+require. **One deliberate departure from the brief's column hints:**
 
 | Departure | Reason |
 |---|---|
-| **`dim_specialty` not built** | The brief asks for specialty inside `dim_provider` *and* as its own dimension. Holding both is **snowflaking** — the opposite of a star schema. Flattened into `dim_provider`; three of four queries group by it. |
-| **`dim_encounter_type` not built** | Three values, no hierarchy, no attributes. A dimension that small buys a join and returns nothing. Kept as a **degenerate dimension** on the fact row. |
 | **`age_group` moved to the fact** | The brief lists it under `dim_patient`. Age changes with the **calendar**, not with any source event, so an SCD mechanism driven by source changes would never fire — the value would simply rot. Age at the time of care is a property of the *encounter*. |
 
-Added: `dim_diagnosis` and `dim_procedure`, required by the bridges.
+**A note on `dim_specialty`, because I got this wrong the first time.** My initial
+design omitted it, arguing that holding specialty in `dim_provider` *and* as its
+own dimension is snowflaking. That was overconfident. Snowflaking is specifically
+`fact → dim_provider → dim_specialty`; if the fact carries `specialty_key`
+directly, `dim_specialty` is an ordinary star point and there is nothing wrong
+with it.
+
+The schema now does both: `fact_encounters.specialty_key` joins `dim_specialty`
+directly, and `specialty_name` is *also* denormalised onto `dim_provider`. Both
+paths are one hop from the fact, so neither snowflakes, and a query already
+joining providers avoids a second join. The duplication is the trade dimensional
+modelling makes on purpose.
+
+`dim_encounter_type` was likewise omitted at first and is now built. Three rows
+is small, but it closes a free-text domain the source leaves open (finding B4)
+and gives `is_emergency` / `is_overnight` somewhere to live — neither of which a
+bare string on the fact row can do.
 
 ### Decision 3 — Pre-aggregated metrics
 

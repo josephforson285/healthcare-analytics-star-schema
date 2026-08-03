@@ -168,6 +168,44 @@ COMMIT;
 
 
 -- =====================================================================
+-- 4b. dim_specialty -- SCD Type 1, straight copy plus unknown member.
+--
+-- Joined directly from the fact via specialty_key, so a query grouping by
+-- specialty need not touch dim_provider at all.
+-- =====================================================================
+INSERT INTO dim_specialty (specialty_key, specialty_id, specialty_name, specialty_code)
+VALUES (-1, -1, 'Unknown', 'UNK');
+
+INSERT INTO dim_specialty (specialty_id, specialty_name, specialty_code)
+SELECT specialty_id, COALESCE(specialty_name,'Unknown'), COALESCE(specialty_code,'UNK')
+FROM healthcare_oltp.specialties;
+COMMIT;
+
+
+-- =====================================================================
+-- 4c. dim_encounter_type -- three rows, enumerated rather than sourced.
+--
+-- GUARD B4: the source column is free-text VARCHAR(50) with no CHECK, so
+-- the valid set cannot be derived from the data -- doing SELECT DISTINCT
+-- would faithfully import 'er' and 'Emergency' as separate types if they
+-- ever appeared. The domain is declared here instead, and anything the
+-- fact load cannot match falls to the -1 unknown member where it is
+-- visible on a report rather than silently becoming a fourth category.
+--
+-- is_emergency / is_overnight are the attributes that justify this being
+-- a dimension at all rather than a bare string on the fact row.
+-- =====================================================================
+INSERT INTO dim_encounter_type (encounter_type_key, type_name, is_emergency, is_overnight)
+VALUES (-1, 'Unknown', 0, 0);
+
+INSERT INTO dim_encounter_type (type_name, is_emergency, is_overnight) VALUES
+    ('Outpatient', 0, 0),
+    ('Inpatient',  0, 1),
+    ('ER',         1, 0);
+COMMIT;
+
+
+-- =====================================================================
 -- 5. dim_diagnosis / dim_procedure
 --
 -- GUARD B6: the source has no UNIQUE on icd10_code or cpt_code, so the
@@ -346,6 +384,7 @@ WHERE i.encounter_type   = 'Inpatient'
 INSERT INTO fact_encounters (
     encounter_id, encounter_type, claim_status,
     date_key, discharge_date_key, patient_key, provider_key, department_key,
+    specialty_key, encounter_type_key,
     principal_diagnosis_key,
     encounter_count, length_of_stay_minutes, patient_age_years, patient_age_band,
     diagnosis_count, procedure_count,
@@ -380,6 +419,8 @@ SELECT
     COALESCE(dp.patient_key,   -1),                                 -- GUARD B1
     COALESCE(dpr.provider_key, -1),                                 -- GUARD B1
     COALESCE(dd.department_key, -1),                                -- GUARD B1
+    COALESCE(dsp.specialty_key, -1),      -- direct star join, not via provider
+    COALESCE(det.encounter_type_key, -1), -- GUARD B4: unmatched -> Unknown
     ddx.diagnosis_key,
 
     1,
@@ -411,6 +452,8 @@ LEFT JOIN healthcare_oltp.patients   p   ON p.patient_id     = e.patient_id
 LEFT JOIN dim_patient                dp  ON dp.patient_id    = e.patient_id  AND dp.is_current = 1
 LEFT JOIN dim_provider               dpr ON dpr.provider_id  = e.provider_id AND dpr.is_current = 1
 LEFT JOIN dim_department             dd  ON dd.department_id = e.department_id
+LEFT JOIN dim_specialty              dsp ON dsp.specialty_id  = dpr.specialty_id
+LEFT JOIN dim_encounter_type         det ON det.type_name     = TRIM(e.encounter_type)
 LEFT JOIN _bill    bl ON bl.encounter_id = e.encounter_id
 LEFT JOIN _dx      dx ON dx.encounter_id = e.encounter_id
 LEFT JOIN _px      px ON px.encounter_id = e.encounter_id

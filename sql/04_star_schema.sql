@@ -5,15 +5,25 @@
 -- Grain: ONE ROW PER ENCOUNTER in fact_encounters.
 -- Rationale for every choice here is in docs/design_decisions.txt.
 --
--- Departures from the brief's suggested table list, all deliberate:
---   dim_specialty ....... not built; flattened into dim_provider to avoid
---                         snowflaking (the brief asks for both)
---   dim_encounter_type .. not built; 3 values kept as a degenerate
---                         dimension on the fact row
---   dim_diagnosis /
---   dim_procedure ....... added; required by the bridges
---   age_group ........... on the fact, not dim_patient -- age is a
---                         property of the event, not of the person
+-- All six dimensions from the brief's Part 3.2 table list are built:
+--   dim_date, dim_patient, dim_provider, dim_specialty,
+--   dim_department, dim_encounter_type
+--
+-- Plus two the brief invites ("Others? diagnoses? procedures?") and the
+-- bridge tables require:
+--   dim_diagnosis, dim_procedure
+--
+-- One deliberate difference from the brief's column hints:
+--   age_group ........... on the fact row, not dim_patient. Age changes
+--                         with the calendar rather than with any source
+--                         event, so an SCD mechanism driven by source
+--                         changes would never fire for it and the stored
+--                         value would rot. Age at the time of care is a
+--                         property of the ENCOUNTER.
+--
+-- Note on dim_specialty: it is joined DIRECTLY FROM THE FACT via
+-- specialty_key. specialty_name is also denormalised onto dim_provider.
+-- Both are one hop from the fact, so neither path is a snowflake.
 -- =====================================================================
 
 DROP DATABASE IF EXISTS healthcare_dw;
@@ -90,13 +100,17 @@ CREATE TABLE dim_patient (
 -- ---------------------------------------------------------------------
 -- dim_provider -- SCD Type 2, WITH SPECIALTY AND DEPARTMENT FLATTENED IN.
 --
--- The brief asks for specialty inside this table AND a separate
--- dim_specialty. Holding both is snowflaking -- normalising a dimension
--- back into sub-tables -- which is what a star schema exists to avoid.
--- Three of the four business questions group by specialty; each would pay
--- an extra join to recover one VARCHAR from a 60-row table.
+-- The brief asks for specialty inside this table AND as its own
+-- dim_specialty. Both are built, and the duplication is intentional.
 --
--- The duplication is the point. It is the trade being made on purpose.
+-- What WOULD be a snowflake is making dim_provider the only route to the
+-- specialty -- fact -> dim_provider -> dim_specialty. That is avoided:
+-- the fact carries specialty_key directly, so dim_specialty is its own
+-- star point, and specialty_name is additionally denormalised here so a
+-- query that has already joined dim_provider needs no second join.
+--
+-- Three of the four business questions group by specialty, so removing a
+-- join from that path is worth duplicating one VARCHAR across 60 rows.
 -- ---------------------------------------------------------------------
 CREATE TABLE dim_provider (
     provider_key         INT AUTO_INCREMENT PRIMARY KEY,
@@ -139,6 +153,59 @@ CREATE TABLE dim_department (
     capacity         INT,
     KEY idx_department_id (department_id)
 ) ENGINE=InnoDB COMMENT='Department dimension (SCD Type 1)';
+
+-- ---------------------------------------------------------------------
+-- dim_specialty -- as specified in the brief's Part 3.2 table list.
+--
+-- IMPORTANT: this is joined DIRECTLY FROM THE FACT via specialty_key, not
+-- from dim_provider. That distinction is what keeps the model a star
+-- rather than a snowflake:
+--
+--     star      fact -> dim_specialty          (what this is)
+--     snowflake fact -> dim_provider -> dim_specialty   (what to avoid)
+--
+-- specialty_name is ALSO carried on dim_provider, deliberately. The
+-- duplication is the trade dimensional modelling makes on purpose: a
+-- query already joining dim_provider can read the specialty without a
+-- second join, while a query that only needs specialty can join this
+-- 12-row table directly and skip dim_provider entirely. Both paths are
+-- one hop from the fact. Storing one VARCHAR twice across 12 and 60 rows
+-- costs a few kilobytes and removes a join from either direction.
+-- ---------------------------------------------------------------------
+CREATE TABLE dim_specialty (
+    specialty_key    INT AUTO_INCREMENT PRIMARY KEY,
+    specialty_id     INT NOT NULL,
+    specialty_name   VARCHAR(100),
+    specialty_code   VARCHAR(10),
+    KEY idx_specialty_id (specialty_id),
+    KEY idx_specialty_name (specialty_name)
+) ENGINE=InnoDB COMMENT='Specialty dimension; joined directly from the fact';
+
+-- ---------------------------------------------------------------------
+-- dim_encounter_type -- as specified in the brief's Part 3.2 table list.
+--
+-- Only three rows ('Outpatient', 'Inpatient', 'ER'). A dimension this
+-- small earns its keep in two ways rather than by being large:
+--
+--   1. It closes the attribute domain. The source column is a free-text
+--      VARCHAR(50) with no CHECK constraint (finding B4), so 'ER', 'er'
+--      and 'Emergency' are all storable. A foreign key to a three-row
+--      table makes a fourth value impossible rather than merely unlikely.
+--   2. It gives the type somewhere to grow attributes -- is_emergency,
+--      is_overnight, typical_duration_band -- that have no home when the
+--      type is just a string on the fact row.
+--
+-- encounter_type is ALSO retained as a text column on the fact, same
+-- reasoning as specialty above: existing queries keep working without a
+-- join, and the FK is there when the dimension's attributes are wanted.
+-- ---------------------------------------------------------------------
+CREATE TABLE dim_encounter_type (
+    encounter_type_key  INT AUTO_INCREMENT PRIMARY KEY,
+    type_name           VARCHAR(20) NOT NULL,
+    is_emergency        TINYINT     NOT NULL DEFAULT 0,
+    is_overnight        TINYINT     NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_type_name (type_name)
+) ENGINE=InnoDB COMMENT='Encounter type dimension (Outpatient/Inpatient/ER)';
 
 -- ---------------------------------------------------------------------
 -- dim_diagnosis / dim_procedure -- required by the bridges.
@@ -196,6 +263,9 @@ CREATE TABLE fact_encounters (
     patient_key              INT         NOT NULL,
     provider_key             INT         NOT NULL,
     department_key           INT         NOT NULL,
+    specialty_key            INT         NOT NULL,   -- direct star join, NOT
+                                                     -- via dim_provider
+    encounter_type_key       INT         NOT NULL,
     principal_diagnosis_key  INT,                    -- denormalised shortcut:
                                                      -- the seq=1 diagnosis, so
                                                      -- common queries can skip
@@ -226,6 +296,8 @@ CREATE TABLE fact_encounters (
     CONSTRAINT fk_f_patient   FOREIGN KEY (patient_key)   REFERENCES dim_patient(patient_key),
     CONSTRAINT fk_f_provider  FOREIGN KEY (provider_key)  REFERENCES dim_provider(provider_key),
     CONSTRAINT fk_f_dept      FOREIGN KEY (department_key) REFERENCES dim_department(department_key),
+    CONSTRAINT fk_f_spec      FOREIGN KEY (specialty_key) REFERENCES dim_specialty(specialty_key),
+    CONSTRAINT fk_f_enctype   FOREIGN KEY (encounter_type_key) REFERENCES dim_encounter_type(encounter_type_key),
     CONSTRAINT fk_f_prindx    FOREIGN KEY (principal_diagnosis_key) REFERENCES dim_diagnosis(diagnosis_key),
 
     UNIQUE KEY uq_encounter (encounter_id),   -- the grain, enforced
@@ -238,7 +310,10 @@ CREATE TABLE fact_encounters (
     KEY idx_provider (provider_key),
     KEY idx_patient (patient_key),
     KEY idx_type_readmit (encounter_type, is_readmission_30d),
-    KEY idx_dept (department_key)
+    KEY idx_dept (department_key),
+    KEY idx_specialty (specialty_key),
+    KEY idx_date_specialty (date_key, specialty_key),
+    KEY idx_enctype (encounter_type_key)
 ) ENGINE=InnoDB COMMENT='Encounter fact; grain = one row per encounter';
 
 
