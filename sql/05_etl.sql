@@ -31,22 +31,17 @@ SET @load_id = LAST_INSERT_ID();
 -- always find a date key.
 -- =====================================================================
 INSERT INTO dim_date (
-    date_key, full_date, year, quarter, quarter_name, month, month_name,
-    month_abbr, calendar_month, day_of_month, day_of_week, day_name,
-    day_of_year, week_of_year, is_weekend)
+    date_key, full_date, year, quarter, month, calendar_month,
+    day_of_month, day_of_week, day_of_year, week_of_year, is_weekend)
 SELECT
     CAST(DATE_FORMAT(d, '%Y%m%d') AS UNSIGNED),
     d,
     YEAR(d),
     QUARTER(d),
-    CONCAT('Q', QUARTER(d)),
     MONTH(d),
-    MONTHNAME(d),
-    DATE_FORMAT(d, '%b'),
     DATE_FORMAT(d, '%Y-%m'),
     DAYOFMONTH(d),
     WEEKDAY(d) + 1,                    -- 1 = Monday
-    DAYNAME(d),
     DAYOFYEAR(d),
     WEEK(d, 3),                        -- ISO week
     IF(WEEKDAY(d) >= 5, 1, 0)
@@ -80,30 +75,26 @@ COMMIT;
 -- drop rows from GROUP BY output.
 -- =====================================================================
 INSERT INTO dim_patient (
-    patient_key, patient_id, mrn, first_name, last_name, full_name,
-    date_of_birth, gender, gender_desc, effective_from, effective_to,
+    patient_key, patient_id, mrn, first_name, last_name,
+    date_of_birth, gender, effective_from, effective_to,
     is_current, row_hash)
 VALUES
-    (-1, -1, 'UNKNOWN', 'Unknown', 'Unknown', 'Unknown Patient',
-     NULL, 'U', 'Unknown', '1900-01-01', '9999-12-31', 1, NULL);
+    (-1, -1, 'UNKNOWN', 'Unknown', 'Unknown',
+     NULL, 'U', '1900-01-01', '9999-12-31', 1, NULL);
 -- ^ the "unknown member". Standard Kimball practice: a fact whose
 --   dimension lookup fails points here rather than carrying a NULL FK,
 --   so the row is still counted and the gap is visible instead of silent.
 
 INSERT INTO dim_patient (
-    patient_id, mrn, first_name, last_name, full_name, date_of_birth,
-    gender, gender_desc, effective_from, effective_to, is_current, row_hash)
+    patient_id, mrn, first_name, last_name, date_of_birth,
+    gender, effective_from, effective_to, is_current, row_hash)
 SELECT
     p.patient_id,
     p.mrn,
     p.first_name,
     p.last_name,
-    CONCAT(COALESCE(p.first_name,''), ' ', COALESCE(p.last_name,'')),
     p.date_of_birth,
-    COALESCE(p.gender, 'U'),
-    CASE COALESCE(p.gender,'U') WHEN 'F' THEN 'Female'
-                                WHEN 'M' THEN 'Male'
-                                ELSE 'Unknown' END,                 -- GUARD B1
+    COALESCE(p.gender, 'U'),                                        -- GUARD B1
     '1900-01-01', '9999-12-31', 1,
     MD5(CONCAT_WS('|', p.mrn, p.first_name, p.last_name,
                        p.date_of_birth, p.gender))
@@ -127,21 +118,19 @@ COMMIT;
 -- where the question is actually asked from.
 -- =====================================================================
 INSERT INTO dim_provider (
-    provider_key, provider_id, first_name, last_name, full_name, credential,
+    provider_key, provider_id, first_name, last_name, credential,
     effective_from, effective_to, is_current, row_hash)
 VALUES
-    (-1, -1, 'Unknown', 'Unknown', 'Unknown Provider', NULL,
+    (-1, -1, 'Unknown', 'Unknown', NULL,
      '1900-01-01', '9999-12-31', 1, NULL);
 
 INSERT INTO dim_provider (
-    provider_id, first_name, last_name, full_name, credential,
+    provider_id, first_name, last_name, credential,
     effective_from, effective_to, is_current, row_hash)
 SELECT
     pr.provider_id,
     pr.first_name,
     pr.last_name,
-    CONCAT(COALESCE(pr.first_name,''), ' ', COALESCE(pr.last_name,''),
-           IF(pr.credential IS NULL, '', CONCAT(', ', pr.credential))),
     pr.credential,
     '1900-01-01', '9999-12-31', 1,
     MD5(CONCAT_WS('|', pr.first_name, pr.last_name, pr.credential,
@@ -213,54 +202,25 @@ COMMIT;
 -- icd10_chapter and cpt_category are derived roll-up levels the source
 -- has no table for.
 -- =====================================================================
-INSERT INTO dim_diagnosis (diagnosis_key, diagnosis_id, icd10_code, icd10_description, icd10_chapter)
-VALUES (-1, -1, 'UNK', 'Unknown diagnosis', 'Unknown');
+INSERT INTO dim_diagnosis (diagnosis_key, diagnosis_id, icd10_code, icd10_description)
+VALUES (-1, -1, 'UNK', 'Unknown diagnosis');
 
-INSERT INTO dim_diagnosis (diagnosis_id, icd10_code, icd10_description, icd10_chapter)
+INSERT INTO dim_diagnosis (diagnosis_id, icd10_code, icd10_description)
 SELECT
     MIN(d.diagnosis_id),                                            -- GUARD B6
     d.icd10_code,
-    MIN(d.icd10_description),
-    CASE LEFT(d.icd10_code, 1)
-        WHEN 'A' THEN 'Infectious and parasitic diseases'
-        WHEN 'B' THEN 'Infectious and parasitic diseases'
-        WHEN 'D' THEN 'Blood and immune disorders'
-        WHEN 'E' THEN 'Endocrine, nutritional and metabolic'
-        WHEN 'F' THEN 'Mental and behavioural disorders'
-        WHEN 'G' THEN 'Nervous system'
-        WHEN 'H' THEN 'Eye and ear'
-        WHEN 'I' THEN 'Circulatory system'
-        WHEN 'J' THEN 'Respiratory system'
-        WHEN 'K' THEN 'Digestive system'
-        WHEN 'L' THEN 'Skin and subcutaneous tissue'
-        WHEN 'M' THEN 'Musculoskeletal and connective tissue'
-        WHEN 'N' THEN 'Genitourinary system'
-        WHEN 'R' THEN 'Symptoms and abnormal findings'
-        WHEN 'S' THEN 'Injury and poisoning'
-        WHEN 'T' THEN 'Injury and poisoning'
-        WHEN 'Z' THEN 'Factors influencing health status'
-        ELSE 'Other'
-    END
+    MIN(d.icd10_description)
 FROM healthcare_oltp.diagnoses d
 GROUP BY d.icd10_code;
 
-INSERT INTO dim_procedure (procedure_key, procedure_id, cpt_code, cpt_description, cpt_category)
-VALUES (-1, -1, 'UNK', 'Unknown procedure', 'Unknown');
+INSERT INTO dim_procedure (procedure_key, procedure_id, cpt_code, cpt_description)
+VALUES (-1, -1, 'UNK', 'Unknown procedure');
 
-INSERT INTO dim_procedure (procedure_id, cpt_code, cpt_description, cpt_category)
+INSERT INTO dim_procedure (procedure_id, cpt_code, cpt_description)
 SELECT
     MIN(p.procedure_id),                                            -- GUARD B6
     p.cpt_code,
-    MIN(p.cpt_description),
-    CASE
-        WHEN p.cpt_code BETWEEN '00100' AND '01999' THEN 'Anesthesia'
-        WHEN p.cpt_code BETWEEN '10000' AND '69999' THEN 'Surgery'
-        WHEN p.cpt_code BETWEEN '70000' AND '79999' THEN 'Radiology'
-        WHEN p.cpt_code BETWEEN '80000' AND '89999' THEN 'Pathology and laboratory'
-        WHEN p.cpt_code BETWEEN '90000' AND '99199' THEN 'Medicine'
-        WHEN p.cpt_code BETWEEN '99200' AND '99499' THEN 'Evaluation and management'
-        ELSE 'Other'
-    END
+    MIN(p.cpt_description)
 FROM healthcare_oltp.procedures p
 GROUP BY p.cpt_code;
 COMMIT;
@@ -382,8 +342,7 @@ INSERT INTO fact_encounters (
     encounter_id, encounter_type, claim_status,
     date_key, discharge_date_key, patient_key, provider_key, department_key,
     specialty_key, encounter_type_key,
-    principal_diagnosis_key,
-    encounter_count, length_of_stay_minutes, patient_age_years, patient_age_band,
+    encounter_count, length_of_stay_minutes, patient_age_years,
     diagnosis_count, procedure_count,
     claim_amount, allowed_amount, denied_amount,
     is_index_admission, is_readmission_30d)
@@ -418,7 +377,6 @@ SELECT
     COALESCE(dd.department_key, -1),                                -- GUARD B1
     COALESCE(dsp.specialty_key, -1),      -- direct star join, not via provider
     COALESCE(det.encounter_type_key, -1), -- GUARD B4: unmatched -> Unknown
-    ddx.diagnosis_key,
 
     1,
     CASE WHEN e.discharge_date IS NULL OR e.discharge_date < e.encounter_date
@@ -426,15 +384,6 @@ SELECT
          ELSE TIMESTAMPDIFF(MINUTE, e.encounter_date, e.discharge_date)
     END,                                                            -- GUARD B8
     TIMESTAMPDIFF(YEAR, p.date_of_birth, e.encounter_date),
-    CASE
-        WHEN p.date_of_birth IS NULL THEN 'Unknown'
-        WHEN TIMESTAMPDIFF(YEAR, p.date_of_birth, e.encounter_date) < 18 THEN '0-17'
-        WHEN TIMESTAMPDIFF(YEAR, p.date_of_birth, e.encounter_date) < 35 THEN '18-34'
-        WHEN TIMESTAMPDIFF(YEAR, p.date_of_birth, e.encounter_date) < 50 THEN '35-49'
-        WHEN TIMESTAMPDIFF(YEAR, p.date_of_birth, e.encounter_date) < 65 THEN '50-64'
-        WHEN TIMESTAMPDIFF(YEAR, p.date_of_birth, e.encounter_date) < 85 THEN '65-84'
-        ELSE '85+'
-    END,
 
     COALESCE(dx.diagnosis_count, 0),
     COALESCE(px.procedure_count, 0),
@@ -456,8 +405,7 @@ LEFT JOIN _bill    bl ON bl.encounter_id = e.encounter_id
 LEFT JOIN _dx      dx ON dx.encounter_id = e.encounter_id
 LEFT JOIN _px      px ON px.encounter_id = e.encounter_id
 LEFT JOIN _readmit rd ON rd.encounter_id = e.encounter_id
-LEFT JOIN healthcare_oltp.diagnoses  sd  ON sd.diagnosis_id  = dx.principal_dx_id
-LEFT JOIN dim_diagnosis              ddx ON ddx.icd10_code   = sd.icd10_code;
+;
 COMMIT;
 
 
@@ -472,12 +420,11 @@ COMMIT;
 -- the same ICD-10 code map to a single dimension row.
 -- =====================================================================
 INSERT IGNORE INTO bridge_encounter_diagnoses
-    (encounter_key, diagnosis_key, diagnosis_sequence, is_principal)
+    (encounter_key, diagnosis_key, diagnosis_sequence)
 SELECT
     f.encounter_key,
     ddx.diagnosis_key,
-    ed.diagnosis_sequence,
-    IF(ed.diagnosis_sequence = 1, 1, 0)
+    ed.diagnosis_sequence
 FROM healthcare_oltp.encounter_diagnoses ed
 JOIN fact_encounters f  ON f.encounter_id  = ed.encounter_id
 JOIN healthcare_oltp.diagnoses sd ON sd.diagnosis_id = ed.diagnosis_id

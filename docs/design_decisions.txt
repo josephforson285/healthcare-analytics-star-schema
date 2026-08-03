@@ -50,9 +50,8 @@ dim_date
 -----------------------------------------------------------------------
   date_key INT PK        -- YYYYMMDD, e.g. 20240612. Human-readable and
                             sorts correctly as an integer.
-  full_date, year, quarter, month, month_name, month_abbr,
-  calendar_month ('2024-06'), day_of_month, day_of_week, day_name,
-  is_weekend, week_of_year, day_of_year
+  full_date, year, quarter, month, calendar_month ('2024-06'),
+  day_of_month, day_of_week, day_of_year, week_of_year, is_weekend
 
   WHY IT EXISTS AT ALL, when encounters already has a DATETIME:
   Q1 and Q4 both spend real time on DATE_FORMAT(encounter_date,'%Y-%m'),
@@ -67,8 +66,7 @@ dim_patient  (SCD Type 2 structure)
 -----------------------------------------------------------------------
   patient_key INT PK     -- surrogate
   patient_id INT         -- natural key from source
-  mrn, first_name, last_name, full_name, date_of_birth, gender,
-  gender_desc ('Female' / 'Male' / 'Unknown')
+  mrn, first_name, last_name, date_of_birth, gender
   effective_from, effective_to, is_current   -- SCD2 machinery
 
   NOTE ON AGE: age is deliberately NOT stored here.
@@ -77,7 +75,7 @@ dim_patient  (SCD Type 2 structure)
 -----------------------------------------------------------------------
 dim_provider  (SCD Type 2 structure)
 -----------------------------------------------------------------------
-  provider_key INT PK, provider_id, full_name, credential,
+  provider_key INT PK, provider_id, first_name, last_name, credential,
   effective_from, effective_to, is_current
 
   Carries no specialty or department reference at all. The fact records
@@ -112,10 +110,8 @@ dim_encounter_type  (SCD Type 1)
 -----------------------------------------------------------------------
 dim_diagnosis
 -----------------------------------------------------------------------
-  diagnosis_key PK, diagnosis_id, icd10_code, icd10_description,
-                    icd10_chapter (derived from the code's first letter)
-  procedure_key PK, procedure_id, cpt_code, cpt_description,
-                    cpt_category (derived from the code range)
+  diagnosis_key PK, diagnosis_id, icd10_code, icd10_description
+  procedure_key PK, procedure_id, cpt_code, cpt_description
 
   Required by the bridges (Decision 4).
 
@@ -127,8 +123,7 @@ DECISION 3: PRE-AGGREGATED METRICS ON THE FACT TABLE
 
 FOREIGN KEYS
   date_key, discharge_date_key, patient_key, provider_key,
-  department_key, specialty_key, encounter_type_key,
-  principal_diagnosis_key
+  department_key, specialty_key, encounter_type_key
 
 DEGENERATE DIMENSION
   encounter_id -- no dimension table backs it; kept for drill-through
@@ -188,8 +183,8 @@ JUSTIFICATION, measure by measure
   patient_age_years
   As above: time-variant, so it belongs to the event, not the person.
 
-  principal_diagnosis_key
-  Denormalised onto the fact from the diagnosis with sequence = 1. Most
+  REMOVED: principal_diagnosis_key
+  Was denormalised onto the fact from the diagnosis with sequence = 1. Most
   clinical reporting only wants the primary diagnosis, and this lets those
   queries avoid the bridge completely. Encounters with secondary diagnoses
   still have them in the bridge; this is a shortcut for the common case,

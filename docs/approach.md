@@ -248,7 +248,7 @@ bare string on the fact row can do.
 > joins? diagnosis_count… procedure_count… total_allowed… Others?"*
 
 All three, plus: `length_of_stay_minutes`, `patient_age_years`,
-`patient_age_band`, `claim_amount`, `denied_amount`, `is_index_admission`,
+`claim_amount`, `denied_amount`, `is_index_admission`,
 `encounter_count`, and — the highest-value one —
 
 **`is_readmission_30d`.** This executes Q3's entire self-join *once*, in the ETL,

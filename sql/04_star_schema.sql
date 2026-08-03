@@ -55,14 +55,10 @@ CREATE TABLE dim_date (
     full_date       DATE        NOT NULL,
     year            SMALLINT    NOT NULL,
     quarter         TINYINT     NOT NULL,
-    quarter_name    CHAR(2)     NOT NULL,               -- 'Q2'
     month           TINYINT     NOT NULL,
-    month_name      VARCHAR(10) NOT NULL,
-    month_abbr      CHAR(3)     NOT NULL,
     calendar_month  CHAR(7)     NOT NULL,               -- '2024-06'
     day_of_month    TINYINT     NOT NULL,
     day_of_week     TINYINT     NOT NULL,               -- 1=Monday
-    day_name        VARCHAR(10) NOT NULL,
     day_of_year     SMALLINT    NOT NULL,
     week_of_year    TINYINT     NOT NULL,
     is_weekend      TINYINT     NOT NULL,
@@ -85,10 +81,8 @@ CREATE TABLE dim_patient (
     mrn             VARCHAR(20),
     first_name      VARCHAR(100),
     last_name       VARCHAR(100),
-    full_name       VARCHAR(201),
     date_of_birth   DATE,
     gender          CHAR(1),
-    gender_desc     VARCHAR(10),
     -- SCD Type 2 machinery
     effective_from  DATE         NOT NULL DEFAULT '1900-01-01',
     effective_to    DATE         NOT NULL DEFAULT '9999-12-31',
@@ -179,7 +173,6 @@ CREATE TABLE dim_provider (
     provider_id     INT          NOT NULL,
     first_name      VARCHAR(100),
     last_name       VARCHAR(100),
-    full_name       VARCHAR(220),
     credential      VARCHAR(20),
     effective_from  DATE    NOT NULL DEFAULT '1900-01-01',
     effective_to    DATE    NOT NULL DEFAULT '9999-12-31',
@@ -229,7 +222,6 @@ CREATE TABLE dim_diagnosis (
     diagnosis_id       INT NOT NULL,
     icd10_code         VARCHAR(10),
     icd10_description  VARCHAR(200),
-    icd10_chapter      VARCHAR(60),      -- derived from the leading letter
     KEY idx_diagnosis_id (diagnosis_id),
     KEY idx_icd10 (icd10_code)
 ) ENGINE=InnoDB COMMENT='Diagnosis (ICD-10) dimension';
@@ -239,7 +231,6 @@ CREATE TABLE dim_procedure (
     procedure_id       INT NOT NULL,
     cpt_code           VARCHAR(10),
     cpt_description    VARCHAR(200),
-    cpt_category       VARCHAR(60),      -- derived from the code range
     KEY idx_procedure_id (procedure_id),
     KEY idx_cpt (cpt_code)
 ) ENGINE=InnoDB COMMENT='Procedure (CPT) dimension';
@@ -276,10 +267,6 @@ CREATE TABLE fact_encounters (
     specialty_key            INT         NOT NULL,   -- direct star join, NOT
                                                      -- via dim_provider
     encounter_type_key       INT         NOT NULL,
-    principal_diagnosis_key  INT,                    -- denormalised shortcut:
-                                                     -- the seq=1 diagnosis, so
-                                                     -- common queries can skip
-                                                     -- the bridge entirely
 
     -- ---- measures ----------------------------------------------------
     encounter_count          TINYINT       NOT NULL DEFAULT 1,
@@ -287,7 +274,6 @@ CREATE TABLE fact_encounters (
                                   -- all measures aggregate identically
     length_of_stay_minutes   INT,
     patient_age_years        SMALLINT,     -- age AT the encounter date
-    patient_age_band         VARCHAR(10),  -- '0-17','18-34',...,'85+'
     diagnosis_count          TINYINT       NOT NULL DEFAULT 0,
     procedure_count          TINYINT       NOT NULL DEFAULT 0,
     claim_amount             DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -308,7 +294,6 @@ CREATE TABLE fact_encounters (
     CONSTRAINT fk_f_dept      FOREIGN KEY (department_key) REFERENCES dim_department(department_key),
     CONSTRAINT fk_f_spec      FOREIGN KEY (specialty_key) REFERENCES dim_specialty(specialty_key),
     CONSTRAINT fk_f_enctype   FOREIGN KEY (encounter_type_key) REFERENCES dim_encounter_type(encounter_type_key),
-    CONSTRAINT fk_f_prindx    FOREIGN KEY (principal_diagnosis_key) REFERENCES dim_diagnosis(diagnosis_key),
 
     UNIQUE KEY uq_encounter (encounter_id),   -- the grain, enforced
 
@@ -357,12 +342,10 @@ CREATE TABLE bridge_encounter_diagnoses (
     encounter_key      BIGINT  NOT NULL,
     diagnosis_key      INT     NOT NULL,
     diagnosis_sequence TINYINT NOT NULL,
-    is_principal       TINYINT NOT NULL DEFAULT 0,   -- sequence = 1
     PRIMARY KEY (encounter_key, diagnosis_key),
     CONSTRAINT fk_bd_enc FOREIGN KEY (encounter_key) REFERENCES fact_encounters(encounter_key),
     CONSTRAINT fk_bd_dx  FOREIGN KEY (diagnosis_key) REFERENCES dim_diagnosis(diagnosis_key),
-    KEY idx_dx (diagnosis_key),
-    KEY idx_principal (is_principal, diagnosis_key)
+    KEY idx_dx_only (diagnosis_key)
 ) ENGINE=InnoDB COMMENT='Encounter <-> diagnosis bridge (many-to-many)';
 
 CREATE TABLE bridge_encounter_procedures (

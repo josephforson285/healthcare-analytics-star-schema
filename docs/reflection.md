@@ -36,7 +36,7 @@ Everything expensive was moved from query time to load time:
 | `allowed_amount`, `denied_amount` | the `billing` join in Q4 |
 | `diagnosis_count`, `procedure_count` | counting rows across two junction tables |
 | `length_of_stay_minutes` | `TIMESTAMPDIFF` on every row |
-| `patient_age_years`, `patient_age_band` | date arithmetic against `date_of_birth` |
+| `patient_age_years` | date arithmetic against `date_of_birth` |
 | `dim_date.calendar_month` | `DATE_FORMAT` recomputed for 300,000 rows |
 | `agg_diagnosis_procedure_pair` | 2,060,000 pair rows formed per execution |
 
@@ -96,9 +96,9 @@ claims as revenue**. Nobody writing that query would have noticed.
 
 ### Lost
 
-**Storage.** `fact_encounters` is 105.2 MB against `encounters` at 47.6 MB — 2.2×,
-for the same 300,000 rows. Thirteen precomputed measure columns, and 69.6 MB of
-that is indexes rather than data.
+**Storage.** `fact_encounters` is 94.7 MB against `encounters` at 47.6 MB — 2.0×,
+for the same 300,000 rows. Most of that is indexes rather than data. It was 133 MB
+before an audit dropped three unused indexes and twelve redundant columns.
 
 **ETL complexity.** ~490 lines carrying explicit data-quality guards, an
 SCD Type 2 mechanism, a high-water mark, and a rolling restatement window. That

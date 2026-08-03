@@ -136,8 +136,9 @@ MIN(id) as a deterministic representative:
 Conforming on the natural business key rather than the surrogate id is
 what makes the dimension trustworthy regardless of source hygiene.
 
-icd10_chapter and cpt_category are derived at load from the code
-structure, giving analysts a roll-up level the source has no table for.
+(An earlier version also derived icd10_chapter and cpt_category as roll-up
+levels. Both were removed -- no query used them, and the brief never asked
+for them. They can be added back the day a question needs them.)
 
 1.6 The unknown member (-1) in every dimension
 -----------------------------------------------
