@@ -71,7 +71,7 @@ dim_patient  (SCD Type 2 structure)
 
   NOTE ON AGE: age is deliberately NOT stored here.
 
-  NO row_hash here, unlike dim_provider. Change detection still uses a
+  NO row_hash here. Change detection still uses a
   content hash -- the source has no updated_at (B9) -- but every attribute
   it covers is already a column in this row, so the ETL recomputes it
   rather than storing a second copy. Measured before removal: the stored
@@ -120,8 +120,9 @@ dim_provider  (SCD Type 2 structure)
   reference here as well would add a dimension-to-dimension edge -- a
   snowflake -- for a column no query reads.
 
-  Transfers still version correctly: row_hash covers the source
-  specialty_id and department_id even though neither is stored.
+  Transfers still version correctly: the change-detection hash is computed
+  from the source specialty_id and department_id at comparison time, even
+  though neither is stored here.
 
 
 -----------------------------------------------------------------------

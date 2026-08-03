@@ -273,9 +273,11 @@ That column is the clearest statement of what the whole exercise is about:
 > **The work did not get cheaper. It moved.** The same self-join runs once per
 > nightly load instead of once per analyst per question.
 
-Also `principal_diagnosis_key`, denormalised from the sequence-1 diagnosis, so
-the common case (most clinical reporting wants only the primary diagnosis) skips
-the bridge entirely.
+A `principal_diagnosis_key` was also added, denormalised from the sequence-1
+diagnosis, on the theory that most clinical reporting wants only the primary
+diagnosis and could skip the bridge. **It was later removed** — no query ever
+took it up, and a column carried on 300,000 rows for a hypothetical benefit is
+exactly the bloat the pruning pass went back and cleared.
 
 ### Decision 4 — Bridge tables
 
