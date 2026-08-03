@@ -96,8 +96,9 @@ claims as revenue**. Nobody writing that query would have noticed.
 
 ### Lost
 
-**Storage.** `fact_encounters` is 108.2 MB against `encounters` at 47.6 MB — 2.3×,
-for the same 300,000 rows. Thirteen precomputed measure columns.
+**Storage.** `fact_encounters` is 105.2 MB against `encounters` at 47.6 MB — 2.2×,
+for the same 300,000 rows. Thirteen precomputed measure columns, and 69.6 MB of
+that is indexes rather than data.
 
 **ETL complexity.** ~490 lines carrying explicit data-quality guards, an
 SCD Type 2 mechanism, a high-water mark, and a rolling restatement window. That

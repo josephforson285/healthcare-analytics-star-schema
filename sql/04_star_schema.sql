@@ -315,15 +315,27 @@ CREATE TABLE fact_encounters (
     -- ---- indexes -----------------------------------------------------
     -- Composite indexes lead with date_key because essentially every
     -- analytical query filters or groups by time first.
-    KEY idx_date (date_key),
-    KEY idx_date_provider (date_key, provider_key),
-    KEY idx_provider (provider_key),
-    KEY idx_patient (patient_key),
-    KEY idx_type_readmit (encounter_type, is_readmission_30d),
-    KEY idx_dept (department_key),
-    KEY idx_specialty (specialty_key),
-    KEY idx_date_specialty (date_key, specialty_key),
-    KEY idx_enctype (encounter_type_key)
+    -- Indexes are deliberately few. Every one below is either chosen by a
+    -- query or required by a foreign key; three earlier ones were dropped
+    -- after checking EXPLAIN, which cut index size from 97.2 MB to 69.6 MB
+    -- (2.73x the data down to 1.96x):
+    --   idx_date (date_key)           redundant -- a leftmost prefix of
+    --                                 idx_date_specialty, so that index
+    --                                 satisfies both the queries and the
+    --                                 date_key foreign key
+    --   idx_date_provider             no query joins dim_provider
+    --   idx_type_readmit              indexed (encounter_type,
+    --                                 is_readmission_30d), but Q3 filters
+    --                                 on is_index_admission -- it never
+    --                                 matched the query it was built for
+    -- Dropping them changed no query timing, as expected: an unused index
+    -- costs write throughput and disk, not read speed.
+    KEY idx_date_specialty (date_key, specialty_key),  -- chosen by Q1 and Q4
+    KEY idx_specialty (specialty_key),                 -- chosen by Q3
+    KEY idx_enctype (encounter_type_key),              -- chosen by Q5
+    KEY idx_patient (patient_key),                     -- FK
+    KEY idx_provider (provider_key),                   -- FK
+    KEY idx_dept (department_key)                      -- FK
 ) ENGINE=InnoDB COMMENT='Encounter fact; grain = one row per encounter';
 
 

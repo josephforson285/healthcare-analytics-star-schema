@@ -104,7 +104,7 @@ JOIN DEPTH; it has no effect on the cost of a distinct-count.
 And the star schema actively hurts here, because the fact table is bigger:
 
     healthcare_oltp.encounters      17.5 MB data /  47.6 MB total
-    healthcare_dw.fact_encounters   33.6 MB data / 108.2 MB total
+    healthcare_dw.fact_encounters   35.6 MB data / 105.2 MB total
 
 fact_encounters is roughly twice the size on disk. It carries thirteen
 precomputed measure columns -- length_of_stay_minutes, patient_age_years,
@@ -394,7 +394,7 @@ The mechanisms, ranked by how much they actually delivered:
 
 And the cost side, which a before/after table tends to hide:
 
-  * fact_encounters is 2.3x the size of encounters on disk (108 MB vs
+  * fact_encounters is 2.2x the size of encounters on disk (105 MB vs
     47.6 MB). Every query pays that scan cost, including the ones that
     read none of the precomputed columns.
   * The ETL takes 68 seconds. That is 68 seconds of work performed
