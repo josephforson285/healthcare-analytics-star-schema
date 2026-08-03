@@ -239,7 +239,7 @@ COMMIT;
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- 6a. Pre-aggregate billing to ENCOUNTER GRAIN.
+-- 8a. Pre-aggregate billing to ENCOUNTER GRAIN.
 --
 -- GUARD B7: billing.encounter_id is not UNIQUE in the source, so a
 -- double-billed encounter would be counted twice by a naive join. This
@@ -271,7 +271,7 @@ FROM healthcare_oltp.billing b
 GROUP BY b.encounter_id;                                            -- GUARD B7
 
 -- ---------------------------------------------------------------------
--- 6b. Diagnosis and procedure counts, plus the principal diagnosis.
+-- 8b. Diagnosis and procedure counts.
 --
 -- GUARD B2/B3: COUNT(DISTINCT ...) rather than COUNT(*), so duplicate
 -- junction rows cannot inflate the stored counts even though the source
@@ -280,18 +280,13 @@ GROUP BY b.encounter_id;                                            -- GUARD B7
 DROP TEMPORARY TABLE IF EXISTS _dx;
 CREATE TEMPORARY TABLE _dx (
     encounter_id    INT PRIMARY KEY,
-    diagnosis_count TINYINT,
-    principal_dx_id INT
+    diagnosis_count TINYINT
 ) ENGINE=InnoDB;
 
 INSERT INTO _dx
 SELECT
     ed.encounter_id,
-    COUNT(DISTINCT ed.diagnosis_id),                                -- GUARD B2
-    -- principal = lowest sequence number; ties broken deterministically
-    SUBSTRING_INDEX(
-        GROUP_CONCAT(ed.diagnosis_id
-                     ORDER BY ed.diagnosis_sequence, ed.diagnosis_id), ',', 1)
+    COUNT(DISTINCT ed.diagnosis_id)                                 -- GUARD B2
 FROM healthcare_oltp.encounter_diagnoses ed
 GROUP BY ed.encounter_id;
 
@@ -307,7 +302,7 @@ FROM healthcare_oltp.encounter_procedures ep
 GROUP BY ep.encounter_id;
 
 -- ---------------------------------------------------------------------
--- 6c. THE READMISSION FLAG -- the single highest-value precomputation.
+-- 8c. THE READMISSION FLAG -- the single highest-value precomputation.
 --
 -- This runs Q3's entire self-join ONCE, here, at load time. Q3 then
 -- becomes a GROUP BY over a stored column.
@@ -331,7 +326,7 @@ WHERE i.encounter_type   = 'Inpatient'
   AND i.discharge_date IS NOT NULL;
 
 -- ---------------------------------------------------------------------
--- 6d. Assemble the fact table.
+-- 8d. Assemble the fact table.
 --
 -- GUARD B1: every dimension lookup uses LEFT JOIN + COALESCE to the -1
 -- unknown member. An inner join would silently DROP encounters whose
