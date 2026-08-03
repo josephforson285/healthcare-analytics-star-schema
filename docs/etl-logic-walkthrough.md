@@ -391,6 +391,105 @@ There is a second, non-performance payoff: the 30-day definition now lives in
 subtly different definitions — some restricting the return to inpatient, some
 using `>=` instead of `>`, some forgetting to exclude the index encounter.
 
+#### The one open question in this project — Q3's definition
+
+This is the single assumption that could change a number you submit, so it is
+written out in full here rather than left in a commit message.
+
+**What the brief says, in full:**
+
+> *"Question 3: 30-Day Readmission Rate. What we need: Which specialty has the
+> highest readmission rate? (Definition: inpatient discharge, then return within
+> 30 days)"*
+
+**Why that is ambiguous.** Read the definition word by word. "Inpatient" modifies
+**discharge** — the starting event is clearly an inpatient discharge. But
+"**return**" is left bare. Return *as what?*
+
+- Another **inpatient** admission?
+- An **ER** visit?
+- A routine **outpatient** follow-up?
+
+The brief never says, and the two readings give very different numbers.
+
+**Interpretation A — any encounter type counts as the return.** This is what the
+ETL implements:
+
+```sql
+AND r.encounter_date >  i.discharge_date
+AND r.encounter_date <= i.discharge_date + INTERVAL 30 DAY
+-- no restriction on r.encounter_type
+```
+
+| specialty | discharges | readmissions | rate |
+|---|---|---|---|
+| **Nephrology** | 2,527 | 568 | **22.48%** |
+| Internal Medicine | 2,433 | 535 | 21.99% |
+| Cardiology | 2,523 | 551 | 21.84% |
+| Psychiatry | 2,454 | 536 | 21.84% |
+
+**Interpretation B — only another inpatient admission counts.** One extra line:
+
+```sql
+AND r.encounter_type = 'Inpatient'    -- the only difference
+```
+
+| specialty | discharges | readmissions | rate |
+|---|---|---|---|
+| **Nephrology** | 2,527 | 74 | **2.93%** |
+| Family Medicine | 2,462 | 70 | 2.84% |
+| Endocrinology | 2,455 | 67 | 2.73% |
+| Orthopedics | 2,476 | 67 | 2.71% |
+
+**Why A was chosen.** Two reasons.
+
+The *literal* reading supports it — the brief qualifies the discharge and leaves
+the return unqualified. If it wanted an inpatient return it could have said
+"inpatient discharge, then inpatient readmission within 30 days".
+
+And clinically, an unplanned ER visit three days after discharge is exactly the
+event a readmission metric is trying to catch. Excluding it would make the
+measure blind to the most concerning kind of return.
+
+**WHY THIS IS LOW RISK — read this part.**
+
+The brief's actual question is *"**which specialty** has the highest readmission
+rate?"* And the answer is **Nephrology under both interpretations.** The rates
+change by a factor of about 7.7 and the rest of the ranking reshuffles, but the
+thing you were asked for is stable.
+
+So this is a documented assumption, not an exposure. It is stated at the top of
+Q3 in both `query_analysis.txt` and `star_schema_queries.txt`.
+
+**What to do about it — three options, in order of effort.**
+
+1. **Nothing.** The assumption is documented, the literal reading supports it,
+   and the answer to the brief's question is the same either way. Entirely
+   defensible as it stands.
+
+2. **Check your course notes**, if readmission was defined in a lecture. If your
+   course said inpatient-only, switch — see 3.
+
+3. **Switch to Interpretation B.** One line in `sql/05_etl.sql`, in the `_readmit`
+   step:
+
+   ```sql
+   WHERE i.encounter_type = 'Inpatient' AND i.discharge_date IS NOT NULL
+     AND r.encounter_type = 'Inpatient'          -- add this
+   ```
+
+   Then reload: `mysql < sql/04_star_schema.sql && mysql < sql/05_etl.sql`
+   (about 35 seconds). The rates in `query_analysis.txt`,
+   `star_schema_queries.txt` and `reflection.md` would need updating from
+   21–22% to 2.7–2.9%.
+
+4. **Report both.** Add Interpretation B as a second column and let the reader
+   see the sensitivity. Most rigorous, and the extra query is trivial since the
+   difference is one predicate.
+
+My recommendation is **1 or 2** — do nothing unless your course materials
+actually contradict it, because the graded answer does not change.
+
 **8d — Assemble**, with two derived measures computed inline:
 
 ```sql

@@ -119,6 +119,30 @@ into one, and only the latter is a Kimball recommendation.
 
 ---
 
+## E. The one open decision
+
+**Q3's readmission definition.** The brief says only *"inpatient discharge, then
+return within 30 days"* — it qualifies the discharge and leaves the return
+unqualified. Two readings are possible and they differ by a factor of ~7.7:
+
+| Reading | Top specialty | Rate |
+|---|---|---|
+| **A — any encounter counts as the return** (implemented) | **Nephrology** | 22.48% |
+| B — only another inpatient admission counts | **Nephrology** | 2.93% |
+
+**A** was chosen on the literal reading (the brief qualifies only the discharge)
+and on clinical grounds (an unplanned ER visit three days post-discharge is
+exactly what the metric exists to catch).
+
+**Why this is low risk:** the brief asks *which specialty* has the highest rate,
+and the answer is **Nephrology under both readings**. The rates move, the
+ranking below first place reshuffles, but the graded answer does not change.
+
+Full write-up, both result tables, and the one-line change to switch:
+`etl-logic-walkthrough.md`, section "The one open question in this project".
+
+---
+
 ## D. Non-issues worth stating
 
 **InnoDB creates indexes on foreign key columns automatically.** So
