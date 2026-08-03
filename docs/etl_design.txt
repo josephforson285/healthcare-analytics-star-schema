@@ -321,24 +321,25 @@ Q: How do you populate bridge_encounter_diagnoses?
 Q: How do you populate bridge_encounter_procedures?
 
       FOR each row in source.encounter_procedures:
-          encounter_key      := lookup fact_encounters BY encounter_id
-          procedure_key      := lookup dim_procedure BY CPT CODE     GUARD B6
-                                (joins source.procedures to resolve id -> code)
-          procedure_date_key := CAST(FORMAT(procedure_date,'YYYYMMDD') AS INT)
+          encounter_key := lookup fact_encounters BY encounter_id
+          procedure_key := lookup dim_procedure BY CPT CODE          GUARD B6
+                           (joins source.procedures to resolve id -> code)
           INSERT IGNORE                                              GUARD B3
 
-  721,035 rows in, 721,035 out.
+  721,035 rows in, 721,035 out. A pure link table -- two keys, nothing else.
 
-  Same shape as the diagnosis bridge with one addition: procedure_date_key.
-  A procedure has its own date, distinct from the encounter's -- during a
-  five-day inpatient stay, procedures happen on different days. That date is a
-  property of the encounter-procedure PAIR, not of the encounter, so it belongs
-  here rather than on the fact.
+  It previously also carried procedure_date_key, because a procedure has its
+  own date distinct from the encounter's: during a five-day inpatient stay,
+  procedures happen on different days, and that date is a property of the
+  encounter-procedure PAIR rather than of the encounter. Conceptually it
+  belonged here.
 
-  Honest note: no query in this project reads procedure_date_key. It survives
-  because it is genuine source data rather than a restatement of a neighbouring
-  column, so the pruning rule applied elsewhere does not catch it. 4 bytes
-  x 721,035 rows, and a real warehouse would want it.
+  It was still dropped, and this is the one prune in the project that loses
+  INFORMATION rather than redundancy. Every other removed column was derivable
+  from a neighbour, so nothing was lost. This one means the warehouse can no
+  longer say which day of a stay a procedure happened on -- the source still
+  can, and the ETL would re-add it in one line the day a question needs it.
+  No query read it; 4 bytes x 721,035 rows for a hypothetical.
 
 TWO DELIBERATE CHOICES
 

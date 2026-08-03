@@ -411,10 +411,19 @@ CREATE TABLE bridge_encounter_diagnoses (
     KEY idx_dx_only (diagnosis_key)
 ) ENGINE=InnoDB COMMENT='Encounter <-> diagnosis bridge (many-to-many)';
 
+-- A pure link table: two keys, nothing else. It previously carried
+-- procedure_date_key, resolved from the source procedure_date. That was
+-- genuine source data rather than a restatement of a neighbouring column, so
+-- the derivability rule used elsewhere did not catch it -- but no query read
+-- it, and 4 bytes x 721,035 rows buys nothing today. Dropped.
+--
+-- Worth noting as the one prune in this project that loses INFORMATION rather
+-- than redundancy: the warehouse can no longer say which day of a five-day
+-- inpatient stay a given procedure happened on. The source still can, and the
+-- ETL would re-add the column in one line the day a question needs it.
 CREATE TABLE bridge_encounter_procedures (
     encounter_key      BIGINT NOT NULL,
     procedure_key      INT    NOT NULL,
-    procedure_date_key INT,
     PRIMARY KEY (encounter_key, procedure_key),
     CONSTRAINT fk_bp_enc FOREIGN KEY (encounter_key) REFERENCES fact_encounters(encounter_key),
     CONSTRAINT fk_bp_px  FOREIGN KEY (procedure_key) REFERENCES dim_procedure(procedure_key),
