@@ -321,25 +321,34 @@ Q: How do you populate bridge_encounter_diagnoses?
 Q: How do you populate bridge_encounter_procedures?
 
       FOR each row in source.encounter_procedures:
-          encounter_key := lookup fact_encounters BY encounter_id
-          procedure_key := lookup dim_procedure BY CPT CODE          GUARD B6
-                           (joins source.procedures to resolve id -> code)
+          encounter_key      := lookup fact_encounters BY encounter_id
+          procedure_key      := lookup dim_procedure BY CPT CODE     GUARD B6
+                                (joins source.procedures to resolve id -> code)
+          procedure_date_key := CAST(FORMAT(procedure_date,'YYYYMMDD') AS INT)
           INSERT IGNORE                                              GUARD B3
 
-  721,035 rows in, 721,035 out. A pure link table -- two keys, nothing else.
+  721,035 rows in, 721,035 out. Nothing aggregated -- the bridge grain is one
+  row per procedure per encounter, which is the source grain.
 
-  It previously also carried procedure_date_key, because a procedure has its
-  own date distinct from the encounter's: during a five-day inpatient stay,
-  procedures happen on different days, and that date is a property of the
-  encounter-procedure PAIR rather than of the encounter. Conceptually it
-  belonged here.
+  Same shape as the diagnosis bridge, with procedure_date_key as its one extra
+  attribute. A procedure has its own date, distinct from the encounter's:
+  during a five-day inpatient stay, procedures happen on different days. That
+  makes the date a property of the encounter-procedure PAIR rather than of the
+  encounter, so it belongs here and not on the fact.
 
-  It was still dropped, and this is the one prune in the project that loses
-  INFORMATION rather than redundancy. Every other removed column was derivable
-  from a neighbour, so nothing was lost. This one means the warehouse can no
-  longer say which day of a stay a procedure happened on -- the source still
-  can, and the ETL would re-add it in one line the day a question needs it.
-  No query read it; 4 bytes x 721,035 rows for a hypothetical.
+  It is also what makes this a Kimball bridge rather than a bare link table --
+  the same role diagnosis_sequence plays on the sibling bridge.
+
+  A NOTE ON THE PRUNING PASS, since this column was briefly dropped and then
+  restored. The rule applied across this schema is "store nothing that another
+  column in the same row already determines". procedure_date_key does not
+  violate it -- the date is real source data, derivable from nothing beside it.
+  It was removed instead on the weaker ground that no query reads it, which
+  contradicted a principle already stated and applied elsewhere: ten other
+  unread columns were kept because a warehouse serves questions beyond the four
+  it launched with. diagnosis_sequence, on the sibling bridge, is the same kind
+  of column in the same position and equally unread, and it was never
+  questioned. Restoring this one makes the rule hold without exception.
 
 TWO DELIBERATE CHOICES
 

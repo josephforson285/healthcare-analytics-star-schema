@@ -434,10 +434,11 @@ JOIN healthcare_oltp.diagnoses sd ON sd.diagnosis_id = ed.diagnosis_id
 JOIN dim_diagnosis   ddx ON ddx.icd10_code = sd.icd10_code;         -- GUARD B6
 
 INSERT IGNORE INTO bridge_encounter_procedures
-    (encounter_key, procedure_key)
+    (encounter_key, procedure_key, procedure_date_key)
 SELECT
     f.encounter_key,
-    dpx.procedure_key
+    dpx.procedure_key,
+    CAST(DATE_FORMAT(ep.procedure_date, '%Y%m%d') AS UNSIGNED)
 FROM healthcare_oltp.encounter_procedures ep
 JOIN fact_encounters f   ON f.encounter_id  = ep.encounter_id
 JOIN healthcare_oltp.procedures sp ON sp.procedure_id = ep.procedure_id

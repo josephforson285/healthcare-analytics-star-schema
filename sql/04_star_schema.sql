@@ -411,19 +411,28 @@ CREATE TABLE bridge_encounter_diagnoses (
     KEY idx_dx_only (diagnosis_key)
 ) ENGINE=InnoDB COMMENT='Encounter <-> diagnosis bridge (many-to-many)';
 
--- A pure link table: two keys, nothing else. It previously carried
--- procedure_date_key, resolved from the source procedure_date. That was
--- genuine source data rather than a restatement of a neighbouring column, so
--- the derivability rule used elsewhere did not catch it -- but no query read
--- it, and 4 bytes x 721,035 rows buys nothing today. Dropped.
+-- procedure_date_key is genuine source data, not a restatement of a
+-- neighbouring column, so the pruning rule used across the rest of this
+-- schema -- "store nothing another column in the same row determines" --
+-- does not apply to it.
 --
--- Worth noting as the one prune in this project that loses INFORMATION rather
--- than redundancy: the warehouse can no longer say which day of a five-day
--- inpatient stay a given procedure happened on. The source still can, and the
--- ETL would re-add the column in one line the day a question needs it.
+-- It WAS dropped at one point, on the different and weaker ground that no
+-- query reads it. That ground was inconsistent: ten other unused columns
+-- were kept on the explicit principle that a warehouse serves questions
+-- beyond the four it launched with -- including diagnosis_sequence on the
+-- sibling bridge, which is the same kind of column in the same position and
+-- equally unread. Restored.
+--
+-- Why it belongs HERE and not on the fact: a procedure has its own date,
+-- distinct from the encounter's. During a five-day inpatient stay procedures
+-- happen on different days, so the date is a property of the
+-- encounter-procedure PAIR. It is also what makes this a Kimball bridge
+-- rather than a bare link table -- the same role diagnosis_sequence plays
+-- next door.
 CREATE TABLE bridge_encounter_procedures (
     encounter_key      BIGINT NOT NULL,
     procedure_key      INT    NOT NULL,
+    procedure_date_key INT,
     PRIMARY KEY (encounter_key, procedure_key),
     CONSTRAINT fk_bp_enc FOREIGN KEY (encounter_key) REFERENCES fact_encounters(encounter_key),
     CONSTRAINT fk_bp_px  FOREIGN KEY (procedure_key) REFERENCES dim_procedure(procedure_key),
