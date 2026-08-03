@@ -66,15 +66,15 @@ Q1: Monthly Encounters by Specialty  --  1.12s -> 1.52s  (SLOWER)
 
     SELECT
         d.calendar_month                AS month,
-        pr.specialty_name,
+        sp.specialty_name,
         f.encounter_type,
         SUM(f.encounter_count)          AS encounters,
         COUNT(DISTINCT f.patient_key)   AS unique_patients
     FROM fact_encounters f
     JOIN dim_date        d  ON d.date_key      = f.date_key
-    JOIN dim_provider    pr ON pr.provider_key = f.provider_key
-    GROUP BY d.calendar_month, pr.specialty_name, f.encounter_type
-    ORDER BY d.calendar_month, pr.specialty_name, f.encounter_type;
+    JOIN dim_specialty   sp ON sp.specialty_key = f.specialty_key
+    GROUP BY d.calendar_month, sp.specialty_name, f.encounter_type
+    ORDER BY d.calendar_month, sp.specialty_name, f.encounter_type;
 
 Measured: 1.52s vs 1.12s original -- 0.74x, i.e. 36% SLOWER.
 
@@ -84,9 +84,9 @@ This result was not expected and is reported as measured.
 
 Two things were supposed to help. The month string is now stored in
 dim_date instead of being recomputed by DATE_FORMAT for 300,000 rows, and
-specialty_name sits directly on dim_provider instead of requiring a second
-hop through the providers table. Both are real improvements. Neither is
-where the time goes.
+the specialty comes from dim_specialty (12 rows) joined directly off the
+fact, instead of a second hop through the providers table. Both are real
+improvements. Neither is where the time goes.
 
 EXPLAIN ANALYZE shows the actual cost:
 
@@ -214,16 +214,16 @@ Q3: 30-Day Readmission Rate  --  0.80s -> 0.21s  (3.8x faster)
 =======================================================================
 
     SELECT
-        pr.specialty_name,
+        sp.specialty_name,
         SUM(f.is_index_admission)                            AS inpatient_discharges,
         SUM(f.is_readmission_30d)                            AS readmissions_30d,
         ROUND(100 * SUM(f.is_readmission_30d)
                   / NULLIF(SUM(f.is_index_admission), 0), 2) AS readmission_rate_pct
     FROM fact_encounters f
-    JOIN dim_provider    pr ON pr.provider_key = f.provider_key
+    JOIN dim_specialty   sp ON sp.specialty_key = f.specialty_key
     WHERE f.is_index_admission = 1
-    GROUP BY pr.specialty_name
-    ORDER BY readmission_rate_pct DESC, pr.specialty_name;
+    GROUP BY sp.specialty_name
+    ORDER BY readmission_rate_pct DESC, sp.specialty_name;
 
 Measured: 0.21s vs 0.80s -- 3.8x faster.
 
@@ -270,14 +270,14 @@ Q4: Revenue by Specialty & Month  --  2.05s -> 1.26s  (1.63x faster)
 
     SELECT
         d.calendar_month            AS month,
-        pr.specialty_name,
+        sp.specialty_name,
         SUM(f.encounter_count)      AS claims,
         ROUND(SUM(f.allowed_amount + f.denied_amount), 2) AS total_allowed
     FROM fact_encounters f
     JOIN dim_date        d  ON d.date_key      = f.date_key
-    JOIN dim_provider    pr ON pr.provider_key = f.provider_key
-    GROUP BY d.calendar_month, pr.specialty_name
-    ORDER BY d.calendar_month, pr.specialty_name;
+    JOIN dim_specialty   sp ON sp.specialty_key = f.specialty_key
+    GROUP BY d.calendar_month, sp.specialty_name
+    ORDER BY d.calendar_month, sp.specialty_name;
 
 Measured: 1.26s vs 2.05s -- 1.63x faster.
 
