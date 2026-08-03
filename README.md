@@ -54,27 +54,29 @@ and whether to use bridge tables.
 
 ## Results
 
-Same four questions, same machine, same data. Median of 3 warm runs. Every star
+Same four questions, same machine, same data. Median of 5 warm runs. Every star
 query's output was diffed row-by-row against its OLTP counterpart before any
 timing was recorded — all four are byte-identical.
 
 | Query | OLTP | Star | Factor |
 |---|---|---|---|
-| Q1 Encounters by month/specialty | 1.12s | 1.52s | **0.74x slower** |
-| Q2 Diagnosis-procedure pairs | 22.56s | 0.03s | 752x faster |
-| Q2b *same, bridges only, no aggregate table* | 22.56s | 4.08s | *5.5x faster* |
-| Q3 30-day readmissions | 0.80s | 0.21s | 3.8x faster |
-| Q4 Revenue by specialty/month | 2.05s | 1.26s | 1.63x faster |
+| Q1 Encounters by month/specialty | 0.606s | 0.308s | 1.97x faster |
+| Q2 Diagnosis-procedure pairs | 10.188s | 0.026s | 392x faster |
+| Q2b *same, bridges only, no aggregate table* | 10.188s | 2.072s | *4.9x faster* |
+| Q3 30-day readmissions | 0.429s | 0.349s | 1.23x faster |
+| Q4 Revenue by specialty/month | 1.081s | 0.189s | 5.72x faster |
 
 Three things this table is careful about:
 
-- **Q2b is the honest star-schema-only number.** The 752x includes a
+- **Q2b is the honest star-schema-only number.** The 392x includes a
   pre-aggregated table, which is precomputation, not dimensional modelling — the
   same aggregate could have been built on the OLTP schema.
-- **Q1 got slower**, and it is the most useful row here. `COUNT(DISTINCT)`
-  dominates it, dimensional modelling does nothing for that, and the fact table
-  is 2.3x larger on disk (108MB vs 47.6MB) because of precomputed columns Q1
-  never reads.
+- **Q1 was slower until the query was rewritten**, and that is the most useful
+  result here. Joining `dim_date`/`dim_specialty` and then grouping on their
+  VARCHAR columns cost more than the joins saved — 1.3x *slower* than OLTP.
+  Grouping instead on `FLOOR(date_key/100)` and `specialty_key`, both integers
+  already on the fact, and joining the text to the 864 output rows, took it to
+  1.97x faster. No schema change. Q4 gained 3.3x from the same rewrite.
 - **The largest gain is not performance.** Neither bridge contains a monetary
   column, so the 6.9x revenue inflation above is structurally unwriteable
   against the star schema rather than merely documented as inadvisable.
@@ -132,7 +134,7 @@ All six dimensions the brief lists are built, plus `dim_diagnosis` and
   dimension would go stale and corrupt historical reporting. Age at the time of
   care is a property of the encounter.
 
-`dim_specialty` is joined **directly from the fact** via `specialty_key`, while
-`specialty_name` is also denormalised onto `dim_provider`. Both are one hop from
-the fact, so neither path snowflakes; the duplication removes a join in either
-direction. Reasoning in `design_decisions.txt`.
+`dim_specialty` is joined **directly from the fact** via `specialty_key`, and
+`dim_provider` holds no specialty or department columns at all. Every dimension
+sits one hop from the fact and there are **zero dimension-to-dimension foreign
+keys** — no snowflake edges anywhere. Reasoning in `design_decisions.txt`.

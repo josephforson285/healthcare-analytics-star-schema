@@ -46,93 +46,102 @@ RESULTS SUMMARY
 
   Query  OLTP       Star       Change        Mechanism
   -----  ---------  ---------  ------------  --------------------------
-  Q1      1.12 s     1.52 s    0.74x SLOWER  wider rows, no help for
-                                             COUNT(DISTINCT)
-  Q2     22.56 s     0.03 s     752x faster  pre-aggregated pair table
-  Q2b    22.56 s     4.08 s     5.5x faster  bridges only, no agg table
-  Q3      0.80 s     0.21 s     3.8x faster  readmission flag precomputed
-  Q4      2.05 s     1.26 s     1.63x faster billing join eliminated
+  Q1     0.606 s    0.308 s    1.97x faster  integer-first aggregation
+  Q2    10.188 s    0.026 s     392x faster  pre-aggregated pair table
+  Q2b   10.188 s    2.072 s     4.9x faster  bridges only, no agg table
+  Q3     0.429 s    0.349 s    1.23x faster  readmission flag precomputed
+  Q4     1.081 s    0.189 s    5.72x faster  billing join gone + integer-first
+
+  Combined: 12.30 s -> 0.87 s, 14.1x overall. All four faster.
+
+  Q1 and Q4 were BOTH slower or barely faster until rewritten to aggregate
+  on integer keys rather than on VARCHARs joined in from dimensions. See the
+  Q1 section -- that rewrite is the single most useful result here.
 
 Q2b is reported separately and deliberately. It answers Q2 from the
 bridges with no aggregate table, and it is the honest measure of what the
-STAR SCHEMA SHAPE alone contributes: 5.5x. The 752x figure includes
+STAR SCHEMA SHAPE alone contributes: 4.9x. The 392x figure includes
 precomputation, which is a different mechanism and should not be
 attributed to dimensional modelling.
 
 
 =======================================================================
-Q1: Monthly Encounters by Specialty  --  1.12s -> 1.52s  (SLOWER)
+Q1: Monthly Encounters by Specialty  --  0.606s -> 0.308s  (1.97x faster)
 =======================================================================
 
     SELECT
-        d.calendar_month                AS month,
+        CONCAT(FLOOR(a.ym / 100), '-', LPAD(a.ym % 100, 2, '0'))  AS month,
         sp.specialty_name,
-        f.encounter_type,
-        SUM(f.encounter_count)          AS encounters,
-        COUNT(DISTINCT f.patient_key)   AS unique_patients
-    FROM fact_encounters f
-    JOIN dim_date        d  ON d.date_key      = f.date_key
-    JOIN dim_specialty   sp ON sp.specialty_key = f.specialty_key
-    GROUP BY d.calendar_month, sp.specialty_name, f.encounter_type
-    ORDER BY d.calendar_month, sp.specialty_name, f.encounter_type;
+        a.encounter_type,
+        a.encounters,
+        a.unique_patients
+    FROM (
+        SELECT
+            FLOOR(f.date_key / 100)         AS ym,   -- YYYYMMDD -> YYYYMM
+            f.specialty_key,
+            f.encounter_type,
+            SUM(f.encounter_count)          AS encounters,
+            COUNT(DISTINCT f.patient_key)   AS unique_patients
+        FROM fact_encounters f
+        GROUP BY ym, f.specialty_key, f.encounter_type
+    ) a
+    JOIN dim_specialty sp ON sp.specialty_key = a.specialty_key
+    ORDER BY month, sp.specialty_name, a.encounter_type;
 
-Measured: 1.52s vs 1.12s original -- 0.74x, i.e. 36% SLOWER.
+THE FIRST VERSION OF THIS QUERY WAS SLOWER THAN THE OLTP ORIGINAL, AND
+THAT IS THE MOST USEFUL THING IN THIS DOCUMENT.
 
-WHY IT GOT SLOWER
+Written the obvious way -- join dim_date and dim_specialty, then
+GROUP BY d.calendar_month, sp.specialty_name -- it measured 0.746s against
+the OLTP query's 0.581s. A 1.3x REGRESSION, on the query the star schema
+was supposed to help.
 
-This result was not expected and is reported as measured.
+The diagnosis was initially wrong. It was attributed to
+COUNT(DISTINCT patient_key) being immune to dimensional modelling, and to
+fact_encounters being twice the size of encounters on disk. Both are true
+and neither was the cause.
 
-Two things were supposed to help. The month string is now stored in
-dim_date instead of being recomputed by DATE_FORMAT for 300,000 rows, and
-the specialty comes from dim_specialty (12 rows) joined directly off the
-fact, instead of a second hop through the providers table. Both are real
-improvements. Neither is where the time goes.
+The actual cause: GROUPING ON TWO VARCHARs PULLED IN FROM JOINED
+DIMENSIONS. That cost more than the joins saved. The same effect had
+already been measured on dim_encounter_type (see Q5) -- grouping on a
+joined string ran 2.5x slower than grouping on one already present in the
+fact row -- and the lesson simply was not applied here.
 
-EXPLAIN ANALYZE shows the actual cost:
+THE FIX, and it needed no schema change at all:
 
-    -> Group aggregate: sum(...), count(distinct patient_key)
-                                          (actual time=1381..1586 rows=864)
-      -> Sort: calendar_month, specialty_name, encounter_type
-                                          (actual time=1381..1407 rows=300000)
+  * FLOOR(date_key / 100) turns YYYYMMDD into YYYYMM. The month falls out
+    of the surrogate key arithmetically, so dim_date is not joined AT ALL.
+    This is a side benefit of choosing YYYYMMDD for date_key rather than a
+    meaningless sequence.
+  * Group by specialty_KEY, an integer on the fact, not specialty_NAME.
+    dim_specialty is then joined to the 864 OUTPUT rows instead of to
+    300,000 input rows.
 
-1,381 ms of a 1,586 ms query is inside the group aggregate, and the
-dominant term there is COUNT(DISTINCT patient_key). That operation has to
-retain and deduplicate a set of patient keys per group across 300,000
-rows. The star schema does nothing about it. Dimensional modelling reduces
-JOIN DEPTH; it has no effect on the cost of a distinct-count.
+    naive star (join then group on names)   0.746 s
+    integer-first (group then join names)   0.287 s
+    OLTP original                          0.581 s
 
-And the star schema actively hurts here, because the fact table is bigger:
+0.746s -> 0.287s, turning a 1.3x regression into a 2.0x improvement.
+Output verified byte-identical to both the naive star version and the OLTP
+original, all 864 rows.
 
-    healthcare_oltp.encounters      17.5 MB data /  47.6 MB total
-    healthcare_dw.fact_encounters   35.6 MB data / 105.2 MB total
+WHAT THIS ACTUALLY DEMONSTRATES
 
-fact_encounters is roughly twice the size on disk. It carries thirteen
-precomputed measure columns -- length_of_stay_minutes, patient_age_years,
-diagnosis_count, procedure_count, three money columns, two flags, and so
-on. Q1 uses NONE of them. It scans past all of them on every row.
+A star schema does not make a badly written query fast. It removes joins
+from the critical path, and then it is still possible to put the cost back
+by grouping and sorting wide text instead of narrow keys.
 
-That is the trade in its clearest form. Precomputation makes the queries
-that use it dramatically faster and makes every other query slightly
-slower, because they all pay to scan columns they do not read. Q3 gains
-3.8x from is_readmission_30d; Q1 pays part of the storage cost for it and
-gets nothing back.
+It is the same principle that makes Q2b beat OLTP Q2: aggregate on integer
+keys, attach the descriptive text to the surviving rows afterwards. Q4
+gained 3.3x from exactly the same rewrite.
 
-WHAT WOULD FIX IT
-
-An aggregate table at month/specialty/type grain, the same technique used
-for Q2. Roughly 864 rows, and Q1 becomes a sub-millisecond lookup. It was
-not built, because building an aggregate for every query that is slightly
-slow is how a warehouse turns into an unmaintainable pile of summary
-tables. The honest engineering answer at 1.5 seconds is to leave it.
-
-A column-store engine would also eliminate the penalty entirely, since it
-would read only the five columns the query touches. That is a real
-argument for running analytics on ClickHouse, DuckDB or BigQuery rather
-than on row-store MySQL, and it is out of scope here.
-
+An aggregate table at month/specialty/type grain would make this a
+sub-millisecond lookup, and is deliberately NOT built -- at 0.3s the query
+does not need one, and adding a summary table for every query that could
+be faster is how a warehouse becomes an unmaintainable pile of them.
 
 =======================================================================
-Q2: Top Diagnosis-Procedure Pairs  --  22.56s -> 0.03s  (752x faster)
+Q2: Top Diagnosis-Procedure Pairs  --  10.188s -> 0.026s  (392x faster)
 =======================================================================
 
     SELECT dd.icd10_code, dd.icd10_description,
@@ -144,7 +153,7 @@ Q2: Top Diagnosis-Procedure Pairs  --  22.56s -> 0.03s  (752x faster)
     ORDER BY a.encounter_count DESC
     LIMIT 20;
 
-Measured: 0.03s vs 22.56s -- 752x faster.
+Measured: 0.026s vs 10.188s -- 392x faster.
 
 WHY IT IS FASTER
 
@@ -155,7 +164,7 @@ and never rebuilt.
 That is the entire mechanism, and it must be attributed correctly:
 THIS SPEEDUP IS PRECOMPUTATION, NOT DIMENSIONAL MODELLING. An equivalent
 aggregate table could have been built directly off the OLTP schema and
-would have performed the same. Claiming 752x as evidence that "star
+would have performed the same. Claiming 392x as evidence that "star
 schemas are faster" would be false.
 
 What the star schema actually contributes is a stable grain to aggregate
@@ -167,7 +176,7 @@ guards in sql/05_etl.sql.
 
 
 =======================================================================
-Q2b: The same question WITHOUT the aggregate table  --  22.56s -> 4.08s
+Q2b: The same question WITHOUT the aggregate table  --  10.188s -> 2.072s
 =======================================================================
 
     SELECT dd.icd10_code, dd.icd10_description,
@@ -185,7 +194,7 @@ Q2b: The same question WITHOUT the aggregate table  --  22.56s -> 4.08s
     JOIN dim_procedure dp ON dp.procedure_key = x.procedure_key
     ORDER BY x.encounter_count DESC;
 
-Measured: 4.08s vs 22.56s -- 5.5x faster.
+Measured: 2.072s vs 10.188s -- 4.9x faster.
 
 THIS IS THE HONEST STAR-SCHEMA-ONLY NUMBER FOR Q2.
 
@@ -197,7 +206,7 @@ schema can answer the question without forming them. Three things changed:
    cpt_description VARCHAR(200) through the sort, because they appear in
    the GROUP BY. Here the grouping happens on two integers and the text is
    joined on afterwards, against 20 surviving rows. Sorting 2M narrow rows
-   instead of 2M wide ones is most of the 5.5x.
+   instead of 2M wide ones is most of the 4.9x.
 
 2. FEWER TABLES IN THE HOT PATH. The OLTP query joins four tables to form
    the pairs; this joins two.
@@ -206,11 +215,11 @@ schema can answer the question without forming them. Three things changed:
    revenue inflation demonstrated in README.md cannot be written from this
    shape, because there is nothing to sum. The wrong answer went from
    "discouraged by documentation" to "structurally impossible" -- which is
-   worth more than the 5.5x.
+   worth more than the 4.9x.
 
 
 =======================================================================
-Q3: 30-Day Readmission Rate  --  0.80s -> 0.21s  (3.8x faster)
+Q3: 30-Day Readmission Rate  --  0.429s -> 0.349s  (1.23x faster)
 =======================================================================
 
     SELECT
@@ -225,7 +234,7 @@ Q3: 30-Day Readmission Rate  --  0.80s -> 0.21s  (3.8x faster)
     GROUP BY sp.specialty_name
     ORDER BY readmission_rate_pct DESC, sp.specialty_name;
 
-Measured: 0.21s vs 0.80s -- 3.8x faster.
+Measured: 0.349s vs 0.429s -- 1.23x faster.
 
 WHY IT IS FASTER
 
@@ -251,7 +260,7 @@ once per load instead of once per analyst per question. If nobody asks the
 readmission question, the star schema is strictly slower overall, because
 the ETL did work nobody needed.
 
-A note on modesty: 3.8x is the smallest speedup of the three that improved,
+A note on modesty: 1.23x is the smallest speedup of the four,
 because the OLTP version was already fast. The brief's hint predicted a
 self-join disaster; the automatic FK index on patient_id meant it never
 happened. The gain is real but it is 0.6 seconds, not a rescue.
@@ -265,7 +274,7 @@ itself. Consistency is arguably worth more here than the 0.6 seconds.
 
 
 =======================================================================
-Q4: Revenue by Specialty & Month  --  2.05s -> 1.26s  (1.63x faster)
+Q4: Revenue by Specialty & Month  --  1.081s -> 0.189s  (5.72x faster)
 =======================================================================
 
     SELECT
@@ -279,7 +288,7 @@ Q4: Revenue by Specialty & Month  --  2.05s -> 1.26s  (1.63x faster)
     GROUP BY d.calendar_month, sp.specialty_name
     ORDER BY d.calendar_month, sp.specialty_name;
 
-Measured: 1.26s vs 2.05s -- 1.63x faster.
+Measured: 0.189s vs 1.081s -- 5.72x faster.
 
 WHY IT IS FASTER
 
@@ -294,7 +303,9 @@ transaction table.
 
 The month is also no longer derived by DATE_FORMAT on every row, which is
 the same saving Q1 got -- and, as Q1 shows, that saving alone is not large.
-Most of the 1.63x here is the eliminated billing join.
+The billing join accounts for part of it; the integer-first rewrite (grouping
+on FLOOR(date_key/100) and specialty_key rather than on the joined VARCHARs)
+accounts for 3.3x of it on its own.
 
 ON (allowed_amount + denied_amount)
 
@@ -367,25 +378,31 @@ the case this one had to answer.
 WHAT THE NUMBERS ACTUALLY SHOW
 =======================================================================
 
-Aggregate result: 26.53 seconds of OLTP query time became 3.02 seconds
-(Q1 + Q2 + Q3 + Q4), an 8.8x overall improvement. But the aggregate hides
+Aggregate result: 12.30 seconds of OLTP query time became 0.87 seconds
+(Q1 + Q2 + Q3 + Q4), a 14.1x overall improvement. But the aggregate hides
 the shape of the result, which is the interesting part:
 
   ONE query got dramatically faster       Q2, and mostly by precomputation
-  TWO got moderately faster               Q3 3.8x, Q4 1.63x
-  ONE got slower                          Q1, 0.74x
+  TWO got substantially faster            Q4 5.72x, Q1 1.97x
+  ONE got moderately faster               Q3 1.23x
+
+  Q1 and Q4 only reached those figures after being rewritten. As first
+  written -- joining dimensions then grouping on their VARCHAR columns --
+  Q1 was 1.3x SLOWER than OLTP and Q4 only 1.8x faster. Grouping on integer
+  keys already present on the fact, and joining the text to the output rows
+  instead, moved them to 1.97x and 5.72x. No schema change was involved.
 
 The mechanisms, ranked by how much they actually delivered:
 
-  1. PRECOMPUTATION (Q2 752x, Q3 3.8x). Doing expensive work once at load
+  1. PRECOMPUTATION (Q2 392x, Q3 1.23x). Doing expensive work once at load
      time instead of once per query. By far the largest effect, and not
      specific to star schemas.
 
-  2. COLLAPSING JOINS BY DENORMALISING (Q4 1.63x). Putting the measure on
+  2. COLLAPSING JOINS BY DENORMALISING (part of Q4's 5.72x). Putting the measure on
      the fact row and the attribute on the dimension row. This is the
      dimensional modelling contribution proper. Real, and moderate.
 
-  3. NARROWER INTERMEDIATE ROWS (Q2b 5.5x). Grouping on integer keys and
+  3. NARROWER INTERMEDIATE ROWS (Q2b 4.9x). Grouping on integer keys and
      joining wide text on afterwards.
 
   4. NOT DERIVING GROUPING KEYS (part of Q1 and Q4). Storing '2024-06'

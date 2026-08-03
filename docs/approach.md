@@ -147,6 +147,12 @@ evidence.
 | Q3 30-day readmissions | 0.80s | 300,000 | none worth reporting |
 | Q4 Revenue by specialty/month | 2.05s | 300,000 | longest join chain |
 
+*(These are the session-A timings recorded in `query_analysis.txt`. The Part 3.3
+table further down uses a later session, where both OLTP and star sides were
+re-measured together — wall-clock on this machine moves ~2x between sessions while
+plans and row counts stay identical. Always compare within a session, never across.
+Full detail: [`results/measurement_sessions.txt`](../results/measurement_sessions.txt).)*
+
 **Q2's plan shows the problem exactly** — 2.06 million rows built and sorted to
 return 20, with ~19 of the 22.5 seconds inside the sort:
 
@@ -164,7 +170,7 @@ The brief's hints set expectations that measurement contradicted:
 |---|---|
 | Q3: *"self-joins on large tables"* → slowest | **Fastest** at 0.80s |
 | Missing indexes are the bottleneck | InnoDB indexes FK columns **automatically** |
-| Q1 would improve under the star schema | It got **26% slower** (see Part 3.3) |
+| Q1 would improve under the star schema | The obvious rewrite was **28% slower**; it took an integer-first rewrite to reach 1.97× faster (Part 3.3) |
 
 That second one reshaped the whole writeup. `encounters.patient_id`,
 `provider_id` and `department_id` are all indexed even though the brief never
@@ -326,22 +332,22 @@ counterpart. That caught two real bugs:
   figure needed both added back.
 
 > *A faster query that returns different numbers is not an optimisation.* Timing
-> first and diffing later would have shipped a 1.63× speedup on a query that was
+> first and diffing later would have shipped a headline speedup on a query that was
 > quietly $84M short.
 
 ### Results
 
 | Query | OLTP | Star | Factor |
 |---|---|---|---|
-| Q1 Encounters by month/specialty | 1.12s | 1.52s | **0.74× slower** |
-| Q2 Diagnosis-procedure pairs | 22.56s | 0.03s | 752× |
-| Q2b *same, bridges only* | 22.56s | 4.08s | *5.5×* |
-| Q3 30-day readmissions | 0.80s | 0.21s | 3.8× |
-| Q4 Revenue by specialty/month | 2.05s | 1.26s | 1.63× |
+| Q1 Encounters by month/specialty | 0.606s | 0.308s | **1.97× faster** |
+| Q2 Diagnosis-procedure pairs | 10.188s | 0.026s | 392× |
+| Q2b *same, bridges only* | 10.188s | 2.072s | *4.9×* |
+| Q3 30-day readmissions | 0.429s | 0.349s | 1.23× |
+| Q4 Revenue by specialty/month | 1.081s | 0.189s | 5.72× |
 
 **Two reporting decisions shaped this table more than any technical choice.**
 
-**Attribute the speedup to the actual mechanism.** Q2's 752× comes from a
+**Attribute the speedup to the actual mechanism.** Q2's 392× comes from a
 pre-aggregated table — **precomputation, not dimensional modelling**. An
 equivalent aggregate could have been built directly on the OLTP schema and would
 have performed the same. So **Q2b was written and measured separately**: the same
@@ -407,8 +413,8 @@ load instead of in every downstream query.
 **Deliverable:** [`reflection.md`](reflection.md). The four required questions,
 answered from measurement. The position it argues:
 
-The **performance** case is weaker than the 8.8× headline suggests. Strip out the
-aggregate table and the star schema delivers 5.5× / 3.8× / 1.63× / **0.74×**.
+The **performance** case is weaker than the 14.1× headline suggests. Strip out the
+aggregate table and the star schema delivers 4.9× / 1.23× / 5.72× / 1.97×.
 Real, but not transformative at this volume.
 
 What makes it worth it is the **correctness** case. A schema where the obvious

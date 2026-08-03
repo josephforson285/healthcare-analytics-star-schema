@@ -26,22 +26,47 @@ USE healthcare_dw;
 --
 -- OLTP: encounters -> providers -> specialties, plus DATE_FORMAT on
 --       300,000 rows to derive the month.
--- Star: the month is a stored column on dim_date, and the specialty is
---       reached by joining dim_specialty (12 rows) DIRECTLY from the
---       fact -- not through dim_provider. Neither value is derived and
---       neither needs a second hop.
+--
+-- THE OBVIOUS STAR REWRITE IS SLOWER THAN THE OLTP QUERY. Written the
+-- natural way -- join dim_date and dim_specialty, then GROUP BY
+-- d.calendar_month, sp.specialty_name -- it measured 0.746s against the
+-- OLTP query's 0.581s. Grouping on two VARCHARs pulled in from joined
+-- dimensions costs more than the joins save. The same effect was measured
+-- on dim_encounter_type (see Q5): grouping on a joined string ran 2.5x
+-- slower than grouping on one already present in the fact row.
+--
+-- The fix is to aggregate on INTEGERS that are already on the fact, then
+-- attach the text to the handful of surviving rows:
+--   * FLOOR(date_key/100) turns YYYYMMDD into YYYYMM. The month falls out
+--     of the key arithmetically -- no dim_date join needed at all.
+--   * group by specialty_KEY, not specialty_NAME, and join dim_specialty
+--     to the 864 output rows instead of to 300,000 input rows.
+--
+-- 0.746s -> 0.287s, and now 2.0x faster than the OLTP query rather than
+-- 1.3x slower. Output verified byte-identical to both the naive star
+-- version and the OLTP original.
+--
+-- This is the same principle that makes Q2b beat OLTP Q2: sort and group
+-- narrow integer keys, join wide text afterwards.
 -- ---------------------------------------------------------------------
 SELECT
-    d.calendar_month                AS month,
+    CONCAT(FLOOR(a.ym / 100), '-', LPAD(a.ym % 100, 2, '0'))  AS month,
     sp.specialty_name,
-    f.encounter_type,
-    SUM(f.encounter_count)          AS encounters,
-    COUNT(DISTINCT f.patient_key)   AS unique_patients
-FROM fact_encounters f
-JOIN dim_date        d  ON d.date_key     = f.date_key
-JOIN dim_specialty   sp ON sp.specialty_key = f.specialty_key
-GROUP BY d.calendar_month, sp.specialty_name, f.encounter_type
-ORDER BY d.calendar_month, sp.specialty_name, f.encounter_type;
+    a.encounter_type,
+    a.encounters,
+    a.unique_patients
+FROM (
+    SELECT
+        FLOOR(f.date_key / 100)         AS ym,     -- YYYYMMDD -> YYYYMM
+        f.specialty_key,
+        f.encounter_type,
+        SUM(f.encounter_count)          AS encounters,
+        COUNT(DISTINCT f.patient_key)   AS unique_patients
+    FROM fact_encounters f
+    GROUP BY ym, f.specialty_key, f.encounter_type
+) a
+JOIN dim_specialty sp ON sp.specialty_key = a.specialty_key
+ORDER BY month, sp.specialty_name, a.encounter_type;
 
 
 -- ---------------------------------------------------------------------
@@ -146,16 +171,26 @@ ORDER BY readmission_rate_pct DESC, sp.specialty_name;
 -- most analysts writing it would never realise they had silently counted
 -- $84.4M of rejected claims as revenue.
 -- ---------------------------------------------------------------------
+-- Same integer-first aggregation as Q1, and the same size of win:
+-- grouping on the joined VARCHARs measured 0.609s, grouping on
+-- FLOOR(date_key/100) and specialty_key measured 0.183s. 3.3x, identical
+-- output across all 288 rows.
 SELECT
-    d.calendar_month            AS month,
+    CONCAT(FLOOR(a.ym / 100), '-', LPAD(a.ym % 100, 2, '0'))  AS month,
     sp.specialty_name,
-    SUM(f.encounter_count)      AS claims,
-    ROUND(SUM(f.allowed_amount + f.denied_amount), 2) AS total_allowed
-FROM fact_encounters f
-JOIN dim_date        d  ON d.date_key      = f.date_key
-JOIN dim_specialty   sp ON sp.specialty_key = f.specialty_key
-GROUP BY d.calendar_month, sp.specialty_name
-ORDER BY d.calendar_month, sp.specialty_name;
+    a.claims,
+    a.total_allowed
+FROM (
+    SELECT
+        FLOOR(f.date_key / 100)     AS ym,
+        f.specialty_key,
+        SUM(f.encounter_count)      AS claims,
+        ROUND(SUM(f.allowed_amount + f.denied_amount), 2) AS total_allowed
+    FROM fact_encounters f
+    GROUP BY ym, f.specialty_key
+) a
+JOIN dim_specialty sp ON sp.specialty_key = a.specialty_key
+ORDER BY month, sp.specialty_name;
 
 
 -- ---------------------------------------------------------------------

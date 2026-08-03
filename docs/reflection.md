@@ -72,9 +72,9 @@ for and not used, so a second copy of the data trades it away deliberately.
 
 ### Gained
 
-**Speed, unevenly.** 26.53s of combined query time became 3.02s — 8.8× overall.
-But the distribution matters more than the aggregate: one query got 752× faster,
-two got moderately faster, and one got slower.
+**Speed.** 12.30s of combined query time became 0.87s — 14.1× overall, with all
+four queries faster. But the distribution matters more than the aggregate, and
+two of them only got there after the queries themselves were rewritten.
 
 **Correctness that is structural rather than documented.** This is the larger
 gain and it does not appear in any timing table. In the OLTP schema, joining
@@ -88,7 +88,7 @@ in the ETL, rather than being re-implemented by every analyst. Ten people
 writing that self-join by hand would produce several subtly different
 definitions — some restricting the return to inpatient, some using `>=` instead
 of `>`, some forgetting to exclude the index encounter. Consistency here is
-arguably worth more than the 0.6 seconds Q3 gained.
+arguably worth more than the 0.08 seconds Q3 gained.
 
 **Better-modelled measures.** Splitting `allowed_amount` into allowed vs denied
 surfaced that the OLTP query had been silently counting **$84.4M of rejected
@@ -114,11 +114,11 @@ anything operational.
 
 Yes, but narrowly, and for a reason different from the one the exercise sets up.
 
-The performance case alone is weaker than the 8.8× headline suggests. Strip out
+The performance case alone is weaker than the 14.1× headline suggests. Strip out
 the aggregate table — which is precomputation, not dimensional modelling — and
-the star schema delivers 5.5× on Q2, 3.8× on Q3, 1.63× on Q4, and **0.74× on
-Q1**. Real, but not transformative. At this data volume, most of these queries
-were survivable in the OLTP schema.
+the star schema delivers 4.9× on Q2, 1.23× on Q3, 5.72× on Q4 and 1.97× on Q1.
+Real, and for Q4 and Q1 only after the queries were rewritten to aggregate on
+integer keys rather than on VARCHARs joined in from dimensions.
 
 What makes it worth it is the fan trap. A schema in which the obvious query
 returns a number 6.9× too large is not slow, it is *dangerous*, and no amount of
@@ -160,7 +160,7 @@ What bridges actually buy:
   reaching for a diagnosis code was exposed.
 - **Rows are narrow.** Bridge rows are 3–4 integers; the OLTP version dragged
   two `VARCHAR(200)` descriptions through the sort because they appear in the
-  `GROUP BY`. That accounts for most of Q2b's 5.5×.
+  `GROUP BY`. That accounts for most of Q2b's 4.9×.
 - **No measure is reachable.** The decisive one. Money lives on the fact table,
   which a bridge-to-bridge join does not include.
 
@@ -204,13 +204,13 @@ recorded** — all four are byte-identical.
 
 | Query | OLTP | Star | Factor | Mechanism |
 |---|---|---|---|---|
-| Q1 Encounters by month/specialty | 1.12s | 1.52s | **0.74× slower** | wider rows; no help for `COUNT(DISTINCT)` |
-| Q2 Diagnosis-procedure pairs | 22.56s | 0.03s | **752× faster** | pre-aggregated pair table |
-| Q2b *same, bridges only* | 22.56s | 4.08s | *5.5× faster* | narrow rows, fewer tables |
-| Q3 30-day readmissions | 0.80s | 0.21s | **3.8× faster** | self-join precomputed to a flag |
-| Q4 Revenue by specialty/month | 2.05s | 1.26s | **1.63× faster** | billing join eliminated |
+| Q1 Encounters by month/specialty | 0.606s | 0.308s | **1.97× faster** | integer-first aggregation (see below) |
+| Q2 Diagnosis-procedure pairs | 10.188s | 0.026s | **392× faster** | pre-aggregated pair table |
+| Q2b *same, bridges only* | 10.188s | 2.072s | *4.9× faster* | narrow rows, fewer tables |
+| Q3 30-day readmissions | 0.429s | 0.349s | **1.23× faster** | self-join precomputed to a flag |
+| Q4 Revenue by specialty/month | 1.081s | 0.189s | **5.72× faster** | billing join gone + integer-first |
 
-### Query 2 — 22.56s → 0.03s, 752×
+### Query 2 — 10.188s → 0.026s, 392×
 
 The OLTP plan built 2,060,000 intermediate rows and sorted them to return 20;
 ~19 of the 22.5 seconds was that sort. The star version reads 1,200 rows
@@ -219,42 +219,66 @@ computed once at load.
 **Attributed honestly: this is precomputation, not dimensional modelling.** An
 equivalent aggregate could have been built directly off the OLTP schema and
 would have performed identically. **Q2b is the fair star-schema-only number:
-5.5×.** What the star schema contributes is a stable, constraint-enforced grain
+4.9×.** What the star schema contributes is a stable, constraint-enforced grain
 to aggregate *from* — the same aggregate built off the raw junction tables would
 have to defend against duplicates, split ICD-10 codes, and NULL keys on every
 run.
 
-### Query 3 — 0.80s → 0.21s, 3.8×
+### Query 3 — 0.429s → 0.349s, 1.23×
 
 The self-join is gone, not optimized — executed once by the ETL and stored as a
 `TINYINT`. Worth noting this is the *smallest* of the three real improvements,
 because the OLTP version was already fast: the brief predicted a self-join
 disaster, and InnoDB's automatic FK index on `patient_id` meant it never
-happened. 30,000 indexed probes, not a quadratic scan. The gain is 0.6 seconds.
+happened. 30,000 indexed probes, not a quadratic scan. The gain is 0.08 seconds.
 
-### Query 1 — the one that got slower
+### Query 1 — the one that was slower, and why it no longer is
 
 The most useful result here, so it gets stated plainly rather than buried.
 
-`EXPLAIN ANALYZE` shows 1,381ms of a 1,586ms query inside the group aggregate,
-dominated by `COUNT(DISTINCT patient_key)`. That operation retains and
-deduplicates a key set per group across 300,000 rows, and **dimensional
-modelling does nothing about it** — it reduces join depth, not distinct-count
-cost. Meanwhile the fact table is 2.3× larger on disk, carrying thirteen
-precomputed columns that Q1 never reads and scans past on every row.
+Written the obvious way — join `dim_date` and `dim_specialty`, then
+`GROUP BY d.calendar_month, sp.specialty_name` — Q1 measured **0.746s against
+the OLTP query's 0.581s.** A 1.3× regression, on the query a star schema is
+supposed to help most.
 
-That is the trade in its clearest form: **precomputation makes the queries that
-use it much faster and every other query slightly slower.** Q3 gains 3.8× from
-`is_readmission_30d`; Q1 helps pay its storage cost and gets nothing back.
+The first diagnosis was wrong. It blamed `COUNT(DISTINCT patient_key)` for being
+immune to dimensional modelling, and the fact table for being twice the size of
+`encounters` on disk. Both are true. Neither was the cause.
 
-It is fixable — an aggregate at month/specialty/type grain would make it
-sub-millisecond — and was deliberately not fixed. Building a summary table for
-every query that is slightly slow is how a warehouse becomes an unmaintainable
-pile of them. At 1.5 seconds, the correct engineering answer is to leave it.
+**The actual cause was grouping on two VARCHARs pulled in from joined
+dimensions.** That cost more than the joins saved — and the same effect had
+already been measured on `dim_encounter_type`, where grouping on a joined string
+ran 2.5× slower than grouping on one already in the fact row. The lesson was
+sitting in the project and simply wasn't applied to Q1.
 
-A column-store engine would remove the penalty entirely by reading only the five
-columns the query touches. That is a real argument for running analytics on
-DuckDB or ClickHouse rather than row-store MySQL, and it is out of scope here.
+The fix needed **no schema change**:
+
+- `FLOOR(date_key / 100)` turns `YYYYMMDD` into `YYYYMM`. The month falls out of
+  the surrogate key arithmetically, so `dim_date` isn't joined at all — a payoff
+  from choosing a readable `date_key` over a meaningless sequence.
+- Group by `specialty_key`, an integer on the fact, not `specialty_name`.
+  `dim_specialty` then joins to the **864 output rows** instead of 300,000 input
+  rows.
+
+| Version | Time |
+|---|---|
+| Naive star — join, then group on names | 0.746s |
+| OLTP original | 0.581s |
+| **Integer-first — group, then join names** | **0.287s** |
+
+A 1.3× regression became a 2.0× improvement, output byte-identical across all
+864 rows. **Q4 gained 3.3× from exactly the same rewrite.**
+
+**What this actually demonstrates** is more useful than the original "star
+schemas aren't uniformly faster" conclusion it replaced: a star schema removes
+joins from the critical path, and it is still entirely possible to put the cost
+back by sorting and grouping wide text instead of narrow keys. The schema was
+never the problem — the query was.
+
+An aggregate table at month/specialty/type grain would make this a
+sub-millisecond lookup and is deliberately not built. At 0.3s it isn't needed,
+and adding a summary table for every query that could be faster is how a
+warehouse becomes an unmaintainable pile of them.
 
 ---
 
@@ -281,11 +305,14 @@ constraints are about validity. Passing one says nothing about the other.
 
 **Measure before claiming.** Three predictions made from the brief's hints were
 wrong: Q3 was expected to be the slowest and was the fastest; Q1 was expected to
-improve and got worse; the "missing index" bottleneck the hints imply does not
+improve and initially got WORSE, until the query rather than the schema was
+fixed; the "missing index" bottleneck the hints imply does not
 exist, because InnoDB indexes foreign key columns automatically. Every one of
 those was caught by running the query rather than reasoning about it.
 
 **The honest summary:** the star schema here bought a 6.9× correctness guarantee
-and an uneven 0.74×–752× performance change whose largest component is not
-dimensional modelling at all. Both are worth having. Neither is what a
+and a 1.23×–392× performance change whose largest component is not dimensional
+modelling at all — and two of the four queries only reached their figures after
+being rewritten to aggregate on integer keys rather than on joined text. A star
+schema makes fast queries possible; it does not make slow ones fast. Both are worth having. Neither is what a
 before/after table alone would have shown.
