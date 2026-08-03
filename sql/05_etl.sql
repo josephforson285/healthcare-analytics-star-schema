@@ -65,10 +65,18 @@ COMMIT;
 -- =====================================================================
 -- 2. dim_patient -- SCD Type 2 structure, initial version of every row.
 --
--- row_hash is the change-detection mechanism. The source has no
--- updated_at (finding B9), so on subsequent loads the ETL recomputes this
--- hash per incoming row and compares it with the stored one. A difference
--- means the attributes changed and a new version is required.
+-- Change detection compares a content hash, since the source has no
+-- updated_at (finding B9). The hash is NOT stored on this table: every
+-- attribute it covers is already a column here, so it is recomputed from
+-- the stored columns and compared with the incoming row --
+--
+--   WHERE MD5(CONCAT_WS('|', d.mrn, d.first_name, d.last_name,
+--                            d.date_of_birth, d.gender))
+--      <> MD5(CONCAT_WS('|', s.mrn, s.first_name, s.last_name,
+--                            s.date_of_birth, s.gender))
+--
+-- dim_provider keeps its row_hash, because that hash covers the source
+-- specialty_id and department_id and neither is stored on that table.
 --
 -- GUARD B1: gender is nullable in the source; mapped to 'Unknown' rather
 -- than propagating NULL into a grouping column, where it would silently
@@ -76,18 +84,17 @@ COMMIT;
 -- =====================================================================
 INSERT INTO dim_patient (
     patient_key, patient_id, mrn, first_name, last_name,
-    date_of_birth, gender, effective_from, effective_to,
-    is_current, row_hash)
+    date_of_birth, gender, effective_from, effective_to, is_current)
 VALUES
     (-1, -1, 'UNKNOWN', 'Unknown', 'Unknown',
-     NULL, 'U', '1900-01-01', '9999-12-31', 1, NULL);
+     NULL, 'U', '1900-01-01', '9999-12-31', 1);
 -- ^ the "unknown member". Standard Kimball practice: a fact whose
 --   dimension lookup fails points here rather than carrying a NULL FK,
 --   so the row is still counted and the gap is visible instead of silent.
 
 INSERT INTO dim_patient (
     patient_id, mrn, first_name, last_name, date_of_birth,
-    gender, effective_from, effective_to, is_current, row_hash)
+    gender, effective_from, effective_to, is_current)
 SELECT
     p.patient_id,
     p.mrn,
@@ -95,9 +102,7 @@ SELECT
     p.last_name,
     p.date_of_birth,
     COALESCE(p.gender, 'U'),                                        -- GUARD B1
-    '1900-01-01', '9999-12-31', 1,
-    MD5(CONCAT_WS('|', p.mrn, p.first_name, p.last_name,
-                       p.date_of_birth, p.gender))
+    '1900-01-01', '9999-12-31', 1
 FROM healthcare_oltp.patients p;
 COMMIT;
 
@@ -342,7 +347,7 @@ INSERT INTO fact_encounters (
     encounter_id, encounter_type, claim_status,
     date_key, discharge_date_key, patient_key, provider_key, department_key,
     specialty_key, encounter_type_key,
-    encounter_count, length_of_stay_minutes, patient_age_years,
+    length_of_stay_minutes, patient_age_years,
     diagnosis_count, procedure_count,
     claim_amount, allowed_amount, denied_amount,
     is_index_admission, is_readmission_30d)
@@ -378,7 +383,6 @@ SELECT
     COALESCE(dsp.specialty_key, -1),      -- direct star join, not via provider
     COALESCE(det.encounter_type_key, -1), -- GUARD B4: unmatched -> Unknown
 
-    1,
     CASE WHEN e.discharge_date IS NULL OR e.discharge_date < e.encounter_date
          THEN NULL
          ELSE TIMESTAMPDIFF(MINUTE, e.encounter_date, e.discharge_date)

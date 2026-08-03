@@ -53,7 +53,11 @@ INITIAL LOAD
   source patient with effective_from='1900-01-01',
   effective_to='9999-12-31', is_current=1, and:
 
-      row_hash := MD5(mrn | first_name | last_name | date_of_birth | gender)
+      (no row_hash column -- the hash is recomputed from the stored
+       columns at comparison time, since dim_patient already holds every
+       attribute it covers. dim_provider DOES store one, because its hash
+       covers the source specialty_id and department_id and neither is
+       stored on that table.)
 
 SUBSEQUENT LOADS -- how updates are handled
 
@@ -63,11 +67,12 @@ SUBSEQUENT LOADS -- how updates are handled
           incoming_hash := MD5(p.mrn | p.first_name | ... )
           current       := SELECT * FROM dim_patient
                            WHERE patient_id = p.patient_id AND is_current = 1
+          current_hash  := MD5(current.mrn | current.first_name | ... )
 
           IF current IS NULL:                       -- new patient
               INSERT new row, is_current = 1
 
-          ELSE IF current.row_hash <> incoming_hash:  -- attributes changed
+          ELSE IF current_hash <> incoming_hash:      -- attributes changed
               -- close the old version
               UPDATE current SET effective_to = TODAY - 1 DAY,
                                  is_current   = 0

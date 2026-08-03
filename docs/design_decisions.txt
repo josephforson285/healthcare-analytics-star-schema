@@ -71,6 +71,34 @@ dim_patient  (SCD Type 2 structure)
 
   NOTE ON AGE: age is deliberately NOT stored here.
 
+  NO row_hash here, unlike dim_provider. Change detection still uses a
+  content hash -- the source has no updated_at (B9) -- but every attribute
+  it covers is already a column in this row, so the ETL recomputes it
+  rather than storing a second copy. Measured before removal: the stored
+  hash matched a recomputation on 50,000/50,000 rows. CHAR(32) x 50,001
+  rows for a restatement of the row beside it.
+
+  dim_provider keeps its row_hash, and the asymmetry is the point: that
+  hash covers the source specialty_id and department_id, neither of which
+  is stored there. Not derivable, so kept.
+
+  WHAT THE SCD2 COLUMNS ARE FOR
+  effective_from / effective_to  the window during which this version was
+                                 true. A correction in 2026 closes the old
+                                 row and opens a new one, so encounters
+                                 from 2023 keep pointing at the old key and
+                                 last year's reports still reconcile.
+  is_current                     convenience flag. Derivable from
+                                 (effective_to = '9999-12-31') and kept
+                                 anyway: 1 byte, canonical Kimball, and it
+                                 keeps every query readable.
+
+  Stated plainly: all three are CONSTANT across all 50,001 rows today,
+  because the ETL only performs a full load and never opens a second
+  version. They are structure for the incremental path in etl_design.txt,
+  which is what the brief's Part 3.4 asks about, and they were demonstrated
+  working -- a source gender change produced two correctly dated versions.
+
 
 -----------------------------------------------------------------------
 dim_provider  (SCD Type 2 structure)
@@ -141,8 +169,6 @@ STILL DEGENERATE
                    as originally proposed, applied here and not reversed.
 
 MEASURES
-  encounter_count .......... always 1. Lets every count be a SUM, so all
-                             measures aggregate identically.
   length_of_stay_minutes ... computed once at load from the two datetimes
   patient_age_years ........ age at the encounter date (see Decision 2)
   diagnosis_count .......... rows in the diagnosis bridge for this encounter

@@ -87,8 +87,17 @@ CREATE TABLE dim_patient (
     effective_from  DATE         NOT NULL DEFAULT '1900-01-01',
     effective_to    DATE         NOT NULL DEFAULT '9999-12-31',
     is_current      TINYINT      NOT NULL DEFAULT 1,
-    row_hash        CHAR(32),        -- change detection; the source has no
-                                     -- updated_at, so we compare content
+    -- NO row_hash here, unlike dim_provider. Change detection still uses a
+    -- content hash -- the source has no updated_at (finding B9) -- but every
+    -- attribute that hash covers (mrn, first_name, last_name, date_of_birth,
+    -- gender) is already a column in this row, so the ETL recomputes it from
+    -- the stored columns instead of persisting a second copy. Measured before
+    -- removal: the stored hash matched a recomputation on 50,000/50,000 rows.
+    --
+    -- dim_provider DOES keep row_hash, and the asymmetry is the point: its
+    -- hash covers the source specialty_id and department_id, neither of which
+    -- is stored there, so it is the only record of what that provider version
+    -- was valid for. Not derivable, therefore kept.
     KEY idx_patient_id (patient_id),
     KEY idx_current (patient_id, is_current)
 ) ENGINE=InnoDB COMMENT='Patient dimension, SCD Type 2';
@@ -269,9 +278,11 @@ CREATE TABLE fact_encounters (
     encounter_type_key       INT         NOT NULL,
 
     -- ---- measures ----------------------------------------------------
-    encounter_count          TINYINT       NOT NULL DEFAULT 1,
-                                  -- always 1, so every count is a SUM and
-                                  -- all measures aggregate identically
+    -- NO encounter_count column. The Kimball pattern is to carry a constant
+    -- 1 so that every metric aggregates as a SUM, which matters when a BI
+    -- tool generates the SQL. These queries are hand-written, and
+    -- SUM(encounter_count) is exactly COUNT(*) -- verified identical on all
+    -- 300,000 rows and per specialty. A byte per row for a synonym.
     length_of_stay_minutes   INT,
     patient_age_years        SMALLINT,     -- age AT the encounter date
     diagnosis_count          TINYINT       NOT NULL DEFAULT 0,

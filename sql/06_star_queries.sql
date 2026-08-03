@@ -60,7 +60,7 @@ FROM (
         FLOOR(f.date_key / 100)         AS ym,     -- YYYYMMDD -> YYYYMM
         f.specialty_key,
         f.encounter_type,
-        SUM(f.encounter_count)          AS encounters,
+        COUNT(*)                        AS encounters,
         COUNT(DISTINCT f.patient_key)   AS unique_patients
     FROM fact_encounters f
     GROUP BY ym, f.specialty_key, f.encounter_type
@@ -184,7 +184,7 @@ FROM (
     SELECT
         FLOOR(f.date_key / 100)     AS ym,
         f.specialty_key,
-        SUM(f.encounter_count)      AS claims,
+        COUNT(*)                    AS claims,
         ROUND(SUM(f.allowed_amount + f.denied_amount), 2) AS total_allowed
     FROM fact_encounters f
     GROUP BY ym, f.specialty_key
@@ -216,9 +216,9 @@ SELECT
     et.type_name,
     et.is_emergency,
     et.is_overnight,
-    SUM(f.encounter_count)                        AS encounters,
+    COUNT(*)                                      AS encounters,
     ROUND(AVG(f.length_of_stay_minutes) / 60, 1)  AS avg_stay_hours,
-    ROUND(SUM(f.allowed_amount + f.denied_amount) / SUM(f.encounter_count), 2)
+    ROUND(SUM(f.allowed_amount + f.denied_amount) / COUNT(*), 2)
                                                   AS avg_revenue_per_encounter
 FROM fact_encounters     f
 JOIN dim_encounter_type  et ON et.encounter_type_key = f.encounter_type_key
