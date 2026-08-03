@@ -67,45 +67,9 @@ dim_patient  (SCD Type 2 structure)
   patient_key INT PK     -- surrogate
   patient_id INT         -- natural key from source
   mrn, first_name, last_name, date_of_birth, gender
-  effective_from, effective_to, is_current   -- SCD2 machinery
+  effective_from, effective_to, is_current   -- SCD2 
 
   NOTE ON AGE: age is deliberately NOT stored here.
-
-  NO row_hash here. Change detection still uses a
-  content hash -- the source has no updated_at (B9) -- but every attribute
-  it covers is already a column in this row, so the ETL recomputes it
-  rather than storing a second copy. Measured before removal: the stored
-  hash matched a recomputation on 50,000/50,000 rows. CHAR(32) x 50,001
-  rows for a restatement of the row beside it.
-
-  dim_provider carries no row_hash either. Its hash originally covered the
-  source specialty_id and department_id -- left over from when this table
-  still held those columns -- which made it look non-derivable and therefore
-  necessary. It is not. A dimension should version on changes to attributes
-  IT HOLDS, and dim_provider holds a name and a credential. Which specialty
-  treated a patient is an attribute of the ENCOUNTER, and the fact already
-  records specialty_key per row, so versioning a provider on a transfer
-  would record in a second place what the fact already says.
-
-  With the hash narrowed to name and credential, it is derivable from the
-  row and no dimension in this warehouse persists one.
-
-  WHAT THE SCD2 COLUMNS ARE FOR
-  effective_from / effective_to  the window during which this version was
-                                 true. A correction in 2026 closes the old
-                                 row and opens a new one, so encounters
-                                 from 2023 keep pointing at the old key and
-                                 last year's reports still reconcile.
-  is_current                     convenience flag. Derivable from
-                                 (effective_to = '9999-12-31') and kept
-                                 anyway: 1 byte, canonical Kimball, and it
-                                 keeps every query readable.
-
-  Stated plainly: all three are CONSTANT across all 50,001 rows today,
-  because the ETL only performs a full load and never opens a second
-  version. They are structure for the incremental path in etl_design.txt,
-  which is what the brief's Part 3.4 asks about, and they were demonstrated
-  working -- a source gender change produced two correctly dated versions.
 
 
 -----------------------------------------------------------------------
@@ -113,16 +77,6 @@ dim_provider  (SCD Type 2 structure)
 -----------------------------------------------------------------------
   provider_key INT PK, provider_id, first_name, last_name, credential,
   effective_from, effective_to, is_current
-
-  Carries no specialty or department reference at all. The fact records
-  provider_key AND specialty_key per encounter, so "which specialty was
-  this provider in, and when" is answerable from the fact. Putting a
-  reference here as well would add a dimension-to-dimension edge -- a
-  snowflake -- for a column no query reads.
-
-  Transfers still version correctly: the change-detection hash is computed
-  from the source specialty_id and department_id at comparison time, even
-  though neither is stored here.
 
 
 -----------------------------------------------------------------------
@@ -148,7 +102,7 @@ dim_encounter_type  (SCD Type 1)
 dim_diagnosis
 -----------------------------------------------------------------------
   diagnosis_key PK, diagnosis_id, icd10_code, icd10_description
-  procedure_key PK, procedure_id, cpt_code, cpt_description
+  
 
   Required by the bridges (Decision 4).
 
@@ -163,19 +117,9 @@ FOREIGN KEYS
   department_key, specialty_key, encounter_type_key
 
 DEGENERATE DIMENSION
-  encounter_id -- no dimension table backs it; kept for drill-through
-                   to the source only.
+  encounter_id 
 
-DENORMALISED COPY (not degenerate -- a real dimension exists)
-  encounter_type -- also a column on dim_encounter_type, reached via
-                   encounter_type_key above. Kept on the fact as well
-                   because reading it here measured 2.5x faster than
-                   joining the dimension for grouping (Q5).
-
-STILL DEGENERATE
-  claim_status -- 3 values, no dimension table, no attributes worth
-                   modelling. Same reasoning that killed dim_specialty
-                   as originally proposed, applied here and not reversed.
+  claim_status
 
 MEASURES
   length_of_stay_minutes ... computed once at load from the two datetimes
@@ -192,7 +136,7 @@ JUSTIFICATION, measure by measure
   These are the counts that Q2's join was computing the expensive way. Any
   question of the form "how many diagnoses does an average ER visit carry"
   becomes AVG(diagnosis_count) against a single table -- no bridge, no
-  join, no fan. The bridge is then needed only when the specific CODES
+  join. The bridge is then needed only when the specific CODES
   matter, not merely how many there were.
 
   total allowed / claim / denied
@@ -202,12 +146,8 @@ JUSTIFICATION, measure by measure
 
 
   is_readmission_30d
-  The single highest-value precomputation here. Q3's entire self-join --
-  30,000 index probes plus date-range evaluation -- is executed ONCE, by
-  the ETL, and the answer is stored as a flag. Q3 collapses to a GROUP BY
-  over a stored column.
-
-  This is the real lesson of the whole. It is faster because the expensive work
+  The single highest-value precomputation here. Q3's entire self-join. Q3 collapses to a GROUP BY
+  over a stored column. It is faster because the expensive work
   was moved from query time to load time, where it happens once a day
   instead of once per analyst per question.
 
@@ -218,32 +158,10 @@ JUSTIFICATION, measure by measure
   patient_age_years
   As above: time-variant, so it belongs to the event, not the person.
 
-  REMOVED: principal_diagnosis_key
-  Was denormalised onto the fact from the diagnosis with sequence = 1. Most
-  clinical reporting only wants the primary diagnosis, and this lets those
-  queries avoid the bridge completely. Encounters with secondary diagnoses
-  still have them in the bridge; this is a shortcut for the common case,
-  not a replacement.
-
 
 =======================================================================
-SCHEMA ENFORCEMENT (not one of the brief's four decisions, but implied by
-"all necessary foreign keys ... indexes")
+SCHEMA ENFORCEMENT on Fact_table
 =======================================================================
-
-Section B of docs/00-findings-and-assumptions.md criticises the SOURCE
-schema for being normalised but not well-constrained -- nine gaps, from
-nullable-everywhere to free-text attribute domains. That criticism only
-carries weight if this schema does better, and at first it did not: the
-warehouse had zero CHECK constraints, and a plain UPDATE was able to write
-a length of stay of -5000, revenue of -999, a 0/1 flag set to 7, and an
-age of 500. All accepted without complaint.
-
-The ETL guards (GUARD B1-B8) only protect the LOAD path. They say nothing
-about anything that touches the table afterwards.
-
-The source cannot be altered, so its gaps are documented. This schema is
-ours, so its gaps are closed -- 27 CHECK constraints:
 
   fact_encounters    length_of_stay_minutes >= 0 (or NULL)
                      claim_amount / allowed_amount / denied_amount >= 0
@@ -260,23 +178,6 @@ ours, so its gaps are closed -- 27 CHECK constraints:
   dim_encounter_type is_emergency, is_overnight IN (0,1)
   bridge (diagnoses) diagnosis_sequence >= 1
   agg table          encounter_count > 0, total_allowed >= 0
-
-Every one was verified against the loaded data before being added -- all 23
-distinct rules returned zero violations -- so the constraints describe what
-the ETL already produces rather than forcing a change to it.
-
-Enforcement side by side:
-
-                            FKs  UNIQUE  CHECK  columns NOT NULL
-  healthcare_oltp (theirs)   10      1      0        22%
-  healthcare_dw   (ours)     13      3     27        73%
-
-Two notes on domain closure specifically. encounter_type and claim_status
-are free-text VARCHAR(50) in the source with no CHECK -- findings B4 and B5
--- so 'ER', 'er' and 'Emergency' are all storable there. Here the domain is
-finite and enforced, which is the second half of the guard: the ETL maps
-unexpected values to 'Unknown' on the way in, and the constraint stops
-anything else being written later.
 
 
 =======================================================================
