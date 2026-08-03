@@ -111,55 +111,10 @@ FROM healthcare_oltp.patients p;
 COMMIT;
 
 
--- =====================================================================
--- 3. dim_provider -- the provider's OWN attributes only.
---
--- specialty_name / specialty_code / home_department_name are deliberately
--- NOT loaded here. They live in dim_specialty and dim_department, which
--- the fact reaches directly via specialty_key and department_key. Holding
--- a second copy on this table removed no join (all three dimensions are
--- one hop from the fact) and drifted when a specialty was renamed, since
--- the hash below covers specialty_ID rather than specialty_NAME.
---
--- specialty_id and home_department_id ARE kept, and are in the hash: a
--- provider moving specialty or department is a real historical change and
--- must open a new SCD2 version.
---
--- No join to specialties/departments is needed any more, which also
--- removes the GUARD B1 concern that an inner join here would have dropped
--- providers with no recorded specialty.
--- =====================================================================
-INSERT INTO dim_provider (
-    provider_key, provider_id, first_name, last_name, full_name, credential,
-    specialty_id, home_department_id,
-    effective_from, effective_to, is_current, row_hash)
-VALUES
-    (-1, -1, 'Unknown', 'Unknown', 'Unknown Provider', NULL,
-     NULL, NULL,
-     '1900-01-01', '9999-12-31', 1, NULL);
-
-INSERT INTO dim_provider (
-    provider_id, first_name, last_name, full_name, credential,
-    specialty_id, home_department_id,
-    effective_from, effective_to, is_current, row_hash)
-SELECT
-    pr.provider_id,
-    pr.first_name,
-    pr.last_name,
-    CONCAT(COALESCE(pr.first_name,''), ' ', COALESCE(pr.last_name,''),
-           IF(pr.credential IS NULL, '', CONCAT(', ', pr.credential))),
-    pr.credential,
-    pr.specialty_id,
-    pr.department_id,
-    '1900-01-01', '9999-12-31', 1,
-    MD5(CONCAT_WS('|', pr.first_name, pr.last_name, pr.credential,
-                       pr.specialty_id, pr.department_id))
-FROM healthcare_oltp.providers pr;
-COMMIT;
 
 
 -- =====================================================================
--- 4. dim_department -- SCD Type 1, straight copy plus unknown member.
+-- 3. dim_department -- SCD Type 1, straight copy plus unknown member.
 -- =====================================================================
 INSERT INTO dim_department (department_key, department_id, department_name, floor, capacity)
 VALUES (-1, -1, 'Unknown', NULL, NULL);
@@ -171,7 +126,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 4b. dim_specialty -- SCD Type 1, straight copy plus unknown member.
+-- 4. dim_specialty -- SCD Type 1, straight copy plus unknown member.
 --
 -- Joined directly from the fact via specialty_key, so a query grouping by
 -- specialty need not touch dim_provider at all.
@@ -186,7 +141,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 4c. dim_encounter_type -- three rows, enumerated rather than sourced.
+-- 5. dim_encounter_type -- three rows, enumerated rather than sourced.
 --
 -- GUARD B4: the source column is free-text VARCHAR(50) with no CHECK, so
 -- the valid set cannot be derived from the data -- doing SELECT DISTINCT
@@ -209,7 +164,64 @@ COMMIT;
 
 
 -- =====================================================================
--- 5. dim_diagnosis / dim_procedure
+-- 6. dim_provider -- the provider's OWN attributes only.
+--
+-- Loaded AFTER dim_specialty and dim_department because it now holds
+-- enforced foreign keys to both.
+--
+-- specialty_name / specialty_code / home_department_name are deliberately
+-- NOT stored here. They live in dim_specialty and dim_department, which the
+-- fact reaches directly. A second copy on this table removed no join -- all
+-- three dimensions sit one hop from the fact -- and drifted when a specialty
+-- was renamed, since the hash covers specialty_ID rather than specialty_NAME.
+--
+-- What IS stored is specialty_key and home_department_key: enforced
+-- surrogate references, not the bare natural-key integers used previously.
+-- Those were unconstrained -- home_department_id = 9999 was accepted without
+-- complaint -- and joining on a natural key defeats the purpose of having a
+-- surrogate key at all.
+--
+-- LEFT JOINs with COALESCE to -1 (GUARD B1): specialty_id and department_id
+-- are nullable in the source, and an inner join would silently drop any
+-- provider whose specialty was never recorded.
+-- =====================================================================
+INSERT INTO dim_provider (
+    provider_key, provider_id, first_name, last_name, full_name, credential,
+    specialty_key, home_department_key,
+    effective_from, effective_to, is_current, row_hash)
+VALUES
+    (-1, -1, 'Unknown', 'Unknown', 'Unknown Provider', NULL,
+     -1, -1,
+     '1900-01-01', '9999-12-31', 1, NULL);
+
+INSERT INTO dim_provider (
+    provider_id, first_name, last_name, full_name, credential,
+    specialty_key, home_department_key,
+    effective_from, effective_to, is_current, row_hash)
+SELECT
+    pr.provider_id,
+    pr.first_name,
+    pr.last_name,
+    CONCAT(COALESCE(pr.first_name,''), ' ', COALESCE(pr.last_name,''),
+           IF(pr.credential IS NULL, '', CONCAT(', ', pr.credential))),
+    pr.credential,
+    COALESCE(dsp.specialty_key,  -1),                               -- GUARD B1
+    COALESCE(ddept.department_key, -1),                              -- GUARD B1
+    '1900-01-01', '9999-12-31', 1,
+    -- The hash is computed from the SOURCE natural keys, not the surrogate
+    -- keys resolved above. Surrogate keys are ours and could in principle be
+    -- reassigned by a reload; the source ids are what actually changed or
+    -- did not. Hashing our own keys would risk spurious versions.
+    MD5(CONCAT_WS('|', pr.first_name, pr.last_name, pr.credential,
+                       pr.specialty_id, pr.department_id))
+FROM      healthcare_oltp.providers pr
+LEFT JOIN dim_specialty   dsp   ON dsp.specialty_id    = pr.specialty_id
+LEFT JOIN dim_department  ddept ON ddept.department_id  = pr.department_id;
+COMMIT;
+
+
+-- =====================================================================
+-- 7. dim_diagnosis / dim_procedure
 --
 -- GUARD B6: the source has no UNIQUE on icd10_code or cpt_code, so the
 -- same clinical code could exist under two surrogate ids and split every
@@ -273,7 +285,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 6. fact_encounters -- the main load.
+-- 8. fact_encounters -- the main load.
 --
 -- Built in stages because several measures depend on aggregates of other
 -- source tables, and doing it in one statement would mean scanning the
@@ -455,7 +467,7 @@ LEFT JOIN healthcare_oltp.patients   p   ON p.patient_id     = e.patient_id
 LEFT JOIN dim_patient                dp  ON dp.patient_id    = e.patient_id  AND dp.is_current = 1
 LEFT JOIN dim_provider               dpr ON dpr.provider_id  = e.provider_id AND dpr.is_current = 1
 LEFT JOIN dim_department             dd  ON dd.department_id = e.department_id
-LEFT JOIN dim_specialty              dsp ON dsp.specialty_id  = dpr.specialty_id
+LEFT JOIN dim_specialty              dsp ON dsp.specialty_key = dpr.specialty_key
 LEFT JOIN dim_encounter_type         det ON det.type_name     = TRIM(e.encounter_type)
 LEFT JOIN _bill    bl ON bl.encounter_id = e.encounter_id
 LEFT JOIN _dx      dx ON dx.encounter_id = e.encounter_id
@@ -467,7 +479,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 7. BRIDGES -- loaded after the fact, since they need encounter_key.
+-- 9. BRIDGES -- loaded after the fact, since they need encounter_key.
 --
 -- GUARD B2/B3: the bridge primary key is (encounter_key, diagnosis_key),
 -- so duplicate source rows collapse rather than propagate. INSERT IGNORE
@@ -502,7 +514,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 8. agg_diagnosis_procedure_pair -- Kimball aggregate navigation.
+-- 10. agg_diagnosis_procedure_pair -- Kimball aggregate navigation.
 --
 -- Forms the ~2.06M pair rows ONCE, here, and stores the ~1,200 distinct
 -- results. Q2 then reads 1,200 rows instead of building 2.06M.
@@ -529,7 +541,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 9. Close the load log and refresh optimizer statistics.
+-- 11. Close the load log and refresh optimizer statistics.
 -- =====================================================================
 UPDATE etl_load_log
 SET load_finished_at = NOW(),
