@@ -55,6 +55,7 @@ properties, and the gap between them is most of what follows.
 | B6 | `icd10_code` / `cpt_code` not `UNIQUE` | One clinical code can exist under two surrogate ids, splitting counts | **ETL GUARD** — conform on code, not id |
 | B7 | `billing.encounter_id` not `UNIQUE` despite being 1:1 | Nothing prevents double-billing an encounter; revenue overstates | **ETL GUARD** — aggregate, never assume 1:1 |
 | B8 | No `CHECK (discharge_date >= encounter_date)`; nothing ties `procedure_date` to the encounter window | Negative length of stay is storable; corrupts any LOS metric | **ETL GUARD** — reject/flag on load |
+| B10 | `patients.gender` accepts any single character, and `date_of_birth` has no bounds — a gender of `'Z'` and a birth date of `2099-01-01` both load. Found by injecting them, not by reading the DDL. | Uncontrolled attribute domain, and an impossible age propagating into `patient_age_years` on 300,000 fact rows | **ETL GUARD** + **CHECK** — normalised and counted on load, `chk_p_gender` / `chk_p_dob` on the dimension |
 
 B4 is worth calling out as a genuine normalisation criticism rather than a
 missing-constraint nitpick. An uncontrolled text domain repeated across 300,000

@@ -56,9 +56,11 @@ unknown member the encounter is still counted, revenue still reconciles, and the
 data-quality gap shows up as a visible row on a report instead of a silent
 shortfall nobody notices.
 
-**Then one row per source patient:**
+**Then one row per source patient.** This was the first version, and it is worth
+seeing before the version that replaced it:
 
 ```sql
+-- FIRST ATTEMPT -- superseded, see "bad patient data" below
 INSERT INTO dim_patient (patient_id, mrn, first_name, last_name, date_of_birth,
                           gender, effective_from, effective_to, is_current)
 SELECT
@@ -80,13 +82,89 @@ Three things are happening beyond a plain copy:
 | `'1900-01-01', '9999-12-31', 1` | opens version 1, valid from the beginning of time until further notice |
 | `patient_key` auto-assigned | the fact points at **this**, never at `patient_id` — so a re-keyed source cannot corrupt history |
 
-50,000 rows in, 50,001 out. It is a straight `SELECT` — no join, no aggregation.
+50,000 rows in, 50,001 out. A straight `SELECT` — no join, no aggregation.
+
+That version turned out to be insufficient, which is the next section.
 
 **Note on what is deliberately absent:** age. A patient's age changes with the
 calendar rather than with any source event, so a stored age band would rot
 silently and corrupt historical reporting. Age at the time of care is computed
 once during the fact load and stored on the fact row, because it is a property
 of the *encounter*.
+
+#### What happens when bad patient data arrives?
+
+This was tested rather than assumed, and the first answer was **it just enters**.
+Four deliberately broken patients were inserted into the source and the load run:
+
+| Injected | Result before validation existed |
+|---|---|
+| `gender = 'Z'` | loaded as `'Z'` |
+| both names `NULL` | loaded as `NULL`/`NULL` |
+| `date_of_birth = '2099-01-01'` | **loaded — a patient born in 2099** |
+| `date_of_birth = NULL` | loaded as `NULL` |
+
+`COALESCE(p.gender, 'U')` handles a *NULL* gender and does nothing about a
+*wrong* one. Nothing at all looked at the date of birth.
+
+There are now **three layers**, and it matters that they do different jobs:
+
+**Layer 1 — normalise in the ETL.** A staging table validates before the insert:
+
+```sql
+-- domain closure: NULL *and* any unexpected value both become 'U'
+CASE WHEN p.gender IN ('F','M') THEN p.gender ELSE 'U' END,
+
+-- temporal sanity: cannot be born in the future or before 1900
+CASE WHEN p.date_of_birth BETWEEN '1900-01-01' AND CURDATE()
+     THEN p.date_of_birth ELSE NULL END,
+```
+
+An implausible date becomes `NULL` rather than propagating into
+`patient_age_years` across 300,000 fact rows.
+
+**Layer 2 — count what was corrected.** The staging table carries flags, so a
+correction is *countable* rather than silently absorbed:
+
+```sql
+(p.gender IS NULL OR p.gender NOT IN ('F','M'))               AS flag_gender,
+(p.date_of_birth IS NOT NULL
+ AND p.date_of_birth NOT BETWEEN '1900-01-01' AND CURDATE())  AS flag_dob,
+(p.first_name IS NULL AND p.last_name IS NULL)                AS flag_noname
+```
+
+**Layer 3 — CHECK constraints, so the table refuses bad writes for ever.**
+
+```sql
+CONSTRAINT chk_p_gender CHECK (gender IN ('F','M','U')),
+CONSTRAINT chk_p_dob    CHECK (date_of_birth IS NULL OR date_of_birth >= '1900-01-01'),
+```
+
+Layer 1 protects the load path. Layer 3 protects everything else — a manual
+`UPDATE dim_patient SET gender='Z'` now fails with `ERROR 3819` instead of
+succeeding.
+
+**Why "not born in the future" is only in the ETL and not a CHECK:** MySQL
+rejects non-deterministic functions inside a constraint —
+`CHECK (d <= CURRENT_DATE)` fails with `ERROR 3814`. So the lower bound is a
+constraint and the upper bound is ETL logic. Worth knowing, because the split
+looks arbitrary until you hit that error.
+
+Re-running the same four bad patients after all this:
+
+| Injected | Result now | Counted |
+|---|---|---|
+| `gender = 'Z'` | normalised to `'U'` | ✅ |
+| both names `NULL` | **kept** as-is | ✅ |
+| `date_of_birth = '2099-01-01'` | set to `NULL` | ✅ |
+| `date_of_birth = NULL` | stays `NULL` | — |
+
+`rows_rejected: 3`, with `notes: gender=1 dob=1 noname=1`.
+
+Note that the nameless patient is **kept**. That is the same principle as the
+unknown member: a patient who exists with no recorded name is still a real
+patient, and dropping the row would lose every encounter attached to them. The
+row loads, the gap is flagged, and someone can go and look.
 
 ### Q: How do you populate `dim_date` (one-time load)?
 
@@ -545,6 +623,98 @@ Each phase commits separately. Because the incremental fact load is
 DELETE-then-INSERT over a bounded window, and the dimension loads are idempotent
 comparisons, **rerunning a failed load is safe.** That property is worth more in
 operations than any performance optimisation in this document.
+
+---
+
+## How `etl_load_log` is used
+
+It is the only piece of state that survives between runs, and it does three
+jobs.
+
+```sql
+CREATE TABLE etl_load_log (
+    load_id           INT AUTO_INCREMENT PRIMARY KEY,
+    load_started_at   DATETIME NOT NULL,
+    load_finished_at  DATETIME,
+    load_type         VARCHAR(20),      -- 'FULL' | 'INCREMENTAL'
+    high_water_mark   INT,              -- max encounter_id loaded
+    rows_inserted     INT,
+    rows_updated      INT,
+    rows_rejected     INT,
+    notes             VARCHAR(500)
+);
+```
+
+**Job 1 — it holds the high-water mark, which is the whole incremental strategy.**
+
+With no `updated_at` in the source, `high_water_mark` is what makes an
+incremental fact load possible at all:
+
+```sql
+last_hwm := SELECT high_water_mark FROM etl_load_log
+            WHERE load_finished_at IS NOT NULL      -- only SUCCESSFUL loads
+            ORDER BY load_id DESC LIMIT 1;
+
+SELECT * FROM source.encounters WHERE encounter_id > last_hwm;
+```
+
+Without this table there is no incremental load, only a nightly full rebuild.
+
+**Job 2 — it makes failure safe.** A row is written at the start and closed at
+the end:
+
+```sql
+INSERT INTO etl_load_log (load_started_at, load_type, notes)
+VALUES (NOW(), 'FULL', 'Initial full load of the dimensional model');
+SET @load_id = LAST_INSERT_ID();
+-- ... the entire load ...
+UPDATE etl_load_log SET load_finished_at = NOW(), ... WHERE load_id = @load_id;
+```
+
+An open row — `load_finished_at IS NULL` — marks a crashed run. Because the
+next load reads its watermark from the last row where `load_finished_at IS NOT
+NULL`, **a crash causes re-processing rather than skipping.** That, plus the fact
+that the incremental load is DELETE-then-INSERT over a bounded window and the
+dimension loads are idempotent comparisons, is what makes rerunning a failed load
+safe.
+
+**Job 3 — it records what the load had to correct.**
+
+`rows_rejected` was originally **hardcoded to 0** — the log reported zero
+rejections without measuring anything, which is worse than not having the column.
+It is now fed by the validation flags:
+
+```sql
+rows_rejected = COALESCE(@patient_flagged, 0),
+notes         = CONCAT(..., '. Patient values corrected: ', @patient_flag_detail)
+```
+
+A clean load reads:
+
+```
+rows_inserted: 300000
+rows_rejected: 0
+        notes: Full load OK. Facts: 300000, dx bridge: 858360,
+               px bridge: 721035, agg pairs: 1200.
+               Patient values corrected: gender=0 dob=0 noname=0
+```
+
+and the same load with four broken patients in the source reads
+`rows_rejected: 3` with `gender=1 dob=1 noname=1`.
+
+**Why that matters more than it looks.** Every guard in this ETL *silently fixes*
+things — a bad gender becomes `'U'`, an impossible date becomes `NULL`, a missing
+provider becomes key `-1`. Silent fixes are correct behaviour, because the
+alternative is dropping real clinical activity. But silent fixes with **no
+counter** are indistinguishable from clean data. The log is what turns "we
+handled it" into "we handled 3 of them, here is the breakdown, go look at the
+source."
+
+**What it does not yet do:** the counters cover the patient dimension only.
+`rows_updated` is still `0` because the implemented ETL never versions anything —
+it is a full load. Both are honest placeholders for the incremental path rather
+than measured values, and are marked as such here rather than left to look
+complete.
 
 ---
 

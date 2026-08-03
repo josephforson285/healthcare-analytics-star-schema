@@ -93,18 +93,62 @@ VALUES
 --   dimension lookup fails points here rather than carrying a NULL FK,
 --   so the row is still counted and the gap is visible instead of silent.
 
-INSERT INTO dim_patient (
-    patient_id, mrn, first_name, last_name, date_of_birth,
-    gender, effective_from, effective_to, is_current)
+-- Validation happens BEFORE the insert, into a staging table, so that
+-- anything corrected or rejected can be counted rather than silently
+-- absorbed. COALESCE alone was not enough: it handles a NULL gender but
+-- passes a gender of 'Z' straight through, and says nothing at all about a
+-- date_of_birth of 2099-01-01. Both were verified to load unchallenged
+-- before this step existed.
+DROP TEMPORARY TABLE IF EXISTS _patient_stage;
+CREATE TEMPORARY TABLE _patient_stage (
+    patient_id      INT PRIMARY KEY,
+    mrn             VARCHAR(20),
+    first_name      VARCHAR(100),
+    last_name       VARCHAR(100),
+    date_of_birth   DATE,
+    gender          CHAR(1),
+    flag_gender     TINYINT NOT NULL DEFAULT 0,  -- value was outside F/M
+    flag_dob        TINYINT NOT NULL DEFAULT 0,  -- implausible, set to NULL
+    flag_noname     TINYINT NOT NULL DEFAULT 0   -- no name at all
+) ENGINE=InnoDB;
+
+INSERT INTO _patient_stage
 SELECT
     p.patient_id,
     p.mrn,
     p.first_name,
     p.last_name,
-    p.date_of_birth,
-    COALESCE(p.gender, 'U'),                                        -- GUARD B1
-    '1900-01-01', '9999-12-31', 1
+    -- GUARD B8-style temporal sanity: a patient cannot be born in the future
+    -- or before 1900. Implausible values become NULL rather than propagating
+    -- into patient_age_years on 300,000 fact rows.
+    CASE WHEN p.date_of_birth BETWEEN '1900-01-01' AND CURDATE()
+         THEN p.date_of_birth ELSE NULL END,
+    -- GUARD B1 + domain closure: NULL *and* any unexpected value both become
+    -- 'U'. COALESCE alone would let 'Z' through.
+    CASE WHEN p.gender IN ('F','M') THEN p.gender ELSE 'U' END,
+    -- the flags are what make the corrections countable
+    (p.gender IS NULL OR p.gender NOT IN ('F','M')),
+    (p.date_of_birth IS NOT NULL
+     AND p.date_of_birth NOT BETWEEN '1900-01-01' AND CURDATE()),
+    (p.first_name IS NULL AND p.last_name IS NULL)
 FROM healthcare_oltp.patients p;
+
+INSERT INTO dim_patient (
+    patient_id, mrn, first_name, last_name, date_of_birth,
+    gender, effective_from, effective_to, is_current)
+SELECT
+    s.patient_id, s.mrn, s.first_name, s.last_name, s.date_of_birth,
+    s.gender, '1900-01-01', '9999-12-31', 1
+FROM _patient_stage s;
+
+-- Record what had to be corrected. @patient_flagged feeds
+-- etl_load_log.rows_rejected at the end of the load, which was previously
+-- hardcoded to 0 -- the log claimed zero rejections without measuring any.
+SET @patient_flagged = (SELECT COUNT(*) FROM _patient_stage
+                        WHERE flag_gender = 1 OR flag_dob = 1 OR flag_noname = 1);
+SET @patient_flag_detail = (SELECT CONCAT(
+        'gender=', SUM(flag_gender), ' dob=', SUM(flag_dob),
+        ' noname=', SUM(flag_noname)) FROM _patient_stage);
 COMMIT;
 
 
@@ -476,7 +520,7 @@ SET load_finished_at = NOW(),
     high_water_mark  = (SELECT MAX(encounter_id) FROM fact_encounters),
     rows_inserted    = (SELECT COUNT(*) FROM fact_encounters),
     rows_updated     = 0,
-    rows_rejected    = 0,
+    rows_rejected    = COALESCE(@patient_flagged, 0),
     notes            = CONCAT('Full load OK. Facts: ',
                               (SELECT COUNT(*) FROM fact_encounters),
                               ', dx bridge: ',
@@ -484,7 +528,9 @@ SET load_finished_at = NOW(),
                               ', px bridge: ',
                               (SELECT COUNT(*) FROM bridge_encounter_procedures),
                               ', agg pairs: ',
-                              (SELECT COUNT(*) FROM agg_diagnosis_procedure_pair))
+                              (SELECT COUNT(*) FROM agg_diagnosis_procedure_pair),
+                              '. Patient values corrected: ',
+                              COALESCE(@patient_flag_detail, 'none'))
 WHERE load_id = @load_id;
 COMMIT;
 

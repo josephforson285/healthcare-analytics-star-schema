@@ -106,6 +106,15 @@ CREATE TABLE dim_patient (
     -- was valid for. Not derivable, therefore kept.
     CONSTRAINT chk_p_validity CHECK (effective_to >= effective_from),
     CONSTRAINT chk_p_current  CHECK (is_current IN (0,1)),
+    -- Attribute-domain rules. Without these, a source gender of 'Z' and a
+    -- date_of_birth of 2099-01-01 both loaded without complaint -- verified
+    -- by injecting them before these were added.
+    CONSTRAINT chk_p_gender   CHECK (gender IN ('F','M','U')),
+    CONSTRAINT chk_p_dob      CHECK (date_of_birth IS NULL
+                                     OR date_of_birth >= '1900-01-01'),
+    -- The "not born in the future" rule cannot be a CHECK: MySQL rejects
+    -- CURRENT_DATE inside one (ERROR 3814, non-deterministic). It is enforced
+    -- in the ETL instead and counted in etl_load_log.rows_rejected.
     KEY idx_patient_id (patient_id),
     KEY idx_current (patient_id, is_current)
 ) ENGINE=InnoDB COMMENT='Patient dimension, SCD Type 2';

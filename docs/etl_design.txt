@@ -272,6 +272,43 @@ Each is computed once, in its own pass, then joined in:
       Computed against the ENCOUNTER date, which is what makes it correct
       permanently rather than only on the day it was loaded.
 
+2.2b Validating patient attributes, and counting the corrections
+----------------------------------------------------------------
+COALESCE(gender,'U') handles a NULL gender and does nothing about a WRONG
+one. Tested by injecting four broken patients into the source: a gender of
+'Z', two NULL names, and a date_of_birth of 2099-01-01 all loaded without
+complaint. A patient born in the future entered the warehouse.
+
+Three layers now:
+
+  1. NORMALISE in a staging table before the insert --
+       gender: CASE WHEN gender IN ('F','M') THEN gender ELSE 'U' END
+       dob:    CASE WHEN dob BETWEEN '1900-01-01' AND CURDATE()
+                    THEN dob ELSE NULL END
+     An implausible date becomes NULL rather than propagating into
+     patient_age_years across 300,000 fact rows.
+
+  2. FLAG each correction, so it is countable rather than silently
+     absorbed: flag_gender, flag_dob, flag_noname.
+
+  3. CHECK CONSTRAINTS so the table refuses bad writes afterwards --
+       chk_p_gender  gender IN ('F','M','U')
+       chk_p_dob     date_of_birth IS NULL OR >= '1900-01-01'
+     Layer 1 protects the load path; layer 3 protects everything else.
+
+The "not born in the future" rule is ETL-only because MySQL rejects
+CURRENT_DATE inside a CHECK (ERROR 3814, non-deterministic). Lower bound is
+a constraint, upper bound is ETL logic.
+
+Re-running the four bad patients: gender normalised to 'U', the 2099 date
+set to NULL, the nameless patient KEPT and flagged. rows_rejected = 3,
+notes = "gender=1 dob=1 noname=1".
+
+The nameless patient is kept on purpose -- same principle as the unknown
+member. A patient with no recorded name is still a real patient, and
+dropping the row would lose every encounter attached to them.
+
+
 2.3 Handling missing data -- the policy, stated once
 -----------------------------------------------------
       Missing dimension reference  -> unknown member (-1), row is KEPT
@@ -475,6 +512,40 @@ Because dimensions load BEFORE facts in every run, and dimensions are
 fully compared rather than incrementally filtered, this resolves itself.
 Should a lookup still fail, the unknown member (-1) catches it and the
 next load repairs the key once the dimension row exists.
+
+4.6a What etl_load_log records, and what it does not
+-----------------------------------------------------
+Three jobs:
+
+  high_water_mark   the entire incremental strategy. With no updated_at in
+                    the source this is what makes an incremental fact load
+                    possible: WHERE encounter_id > last_hwm. Read from the
+                    last row where load_finished_at IS NOT NULL, so a
+                    crashed run causes RE-processing rather than skipping.
+
+  open/closed row   written at start, closed at end. An open row marks a
+                    crash. See 4.6.
+
+  rows_rejected     what the load had to correct. This was originally
+                    HARDCODED TO 0 -- the log reported zero rejections
+                    without measuring any, which is worse than not having
+                    the column. It is now fed from the patient validation
+                    flags, with a breakdown in notes.
+
+Why the counter matters more than it looks: every guard in this ETL
+SILENTLY FIXES things -- a bad gender becomes 'U', an impossible date
+becomes NULL, a missing provider becomes key -1. Silent fixing is correct,
+because the alternative is dropping real clinical activity. But a silent fix
+with no counter is indistinguishable from clean data. The log turns "we
+handled it" into "we handled 3, here is the breakdown, go look at the
+source".
+
+What it does NOT do, stated rather than left to look complete:
+  * the counters cover dim_patient only
+  * rows_updated is still 0, because the implemented ETL never versions
+    anything -- it is a full load. It is a placeholder for the incremental
+    path, not a measured value.
+
 
 4.6 Failure handling
 ---------------------
