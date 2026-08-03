@@ -78,7 +78,6 @@ dim_patient  (SCD Type 2 structure)
 dim_provider  (SCD Type 2 structure)
 -----------------------------------------------------------------------
   provider_key INT PK, provider_id, full_name, credential,
-  (no specialty or department columns -- see note)
   effective_from, effective_to, is_current
 
   Carries no specialty or department reference at all. The fact records
@@ -131,8 +130,20 @@ FOREIGN KEYS
   department_key, specialty_key, encounter_type_key,
   principal_diagnosis_key
 
-DEGENERATE DIMENSIONS
-  encounter_id, encounter_type, claim_status
+DEGENERATE DIMENSION
+  encounter_id -- no dimension table backs it; kept for drill-through
+                   to the source only.
+
+DENORMALISED COPY (not degenerate -- a real dimension exists)
+  encounter_type -- also a column on dim_encounter_type, reached via
+                   encounter_type_key above. Kept on the fact as well
+                   because reading it here measured 2.5x faster than
+                   joining the dimension for grouping (Q5).
+
+STILL DEGENERATE
+  claim_status -- 3 values, no dimension table, no attributes worth
+                   modelling. Same reasoning that killed dim_specialty
+                   as originally proposed, applied here and not reversed.
 
 MEASURES
   encounter_count .......... always 1. Lets every count be a SUM, so all
