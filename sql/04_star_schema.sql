@@ -63,6 +63,12 @@ CREATE TABLE dim_date (
     week_of_year    TINYINT     NOT NULL,
     is_weekend      TINYINT     NOT NULL,
     UNIQUE KEY uq_full_date (full_date),
+    CONSTRAINT chk_d_month   CHECK (month       BETWEEN 1 AND 12),
+    CONSTRAINT chk_d_quarter CHECK (quarter     BETWEEN 1 AND 4),
+    CONSTRAINT chk_d_dow     CHECK (day_of_week BETWEEN 1 AND 7),
+    CONSTRAINT chk_d_dom     CHECK (day_of_month BETWEEN 1 AND 31),
+    CONSTRAINT chk_d_doy     CHECK (day_of_year BETWEEN 1 AND 366),
+    CONSTRAINT chk_d_weekend CHECK (is_weekend  IN (0,1)),
     KEY idx_calendar_month (calendar_month),
     KEY idx_year_quarter (year, quarter)
 ) ENGINE=InnoDB COMMENT='Calendar dimension; one row per day';
@@ -98,6 +104,8 @@ CREATE TABLE dim_patient (
     -- hash covers the source specialty_id and department_id, neither of which
     -- is stored there, so it is the only record of what that provider version
     -- was valid for. Not derivable, therefore kept.
+    CONSTRAINT chk_p_validity CHECK (effective_to >= effective_from),
+    CONSTRAINT chk_p_current  CHECK (is_current IN (0,1)),
     KEY idx_patient_id (patient_id),
     KEY idx_current (patient_id, is_current)
 ) ENGINE=InnoDB COMMENT='Patient dimension, SCD Type 2';
@@ -201,6 +209,8 @@ CREATE TABLE dim_provider (
     -- With the hash narrowed to name and credential, every attribute it covers
     -- is a column in this row, so it is recomputed at comparison time rather
     -- than stored. No dimension in this warehouse now persists a row_hash.
+    CONSTRAINT chk_pr_validity CHECK (effective_to >= effective_from),
+    CONSTRAINT chk_pr_current  CHECK (is_current IN (0,1)),
     KEY idx_provider_id (provider_id),
     KEY idx_current (provider_id, is_current)
 ) ENGINE=InnoDB COMMENT='Provider dimension, SCD Type 2; own attributes only';
@@ -228,7 +238,9 @@ CREATE TABLE dim_encounter_type (
     type_name           VARCHAR(20) NOT NULL,
     is_emergency        TINYINT     NOT NULL DEFAULT 0,
     is_overnight        TINYINT     NOT NULL DEFAULT 0,
-    UNIQUE KEY uq_type_name (type_name)
+    UNIQUE KEY uq_type_name (type_name),
+    CONSTRAINT chk_et_emerg CHECK (is_emergency IN (0,1)),
+    CONSTRAINT chk_et_night CHECK (is_overnight IN (0,1))
 ) ENGINE=InnoDB COMMENT='Encounter type dimension (Outpatient/Inpatient/ER)';
 
 -- ---------------------------------------------------------------------
@@ -320,6 +332,33 @@ CREATE TABLE fact_encounters (
 
     UNIQUE KEY uq_encounter (encounter_id),   -- the grain, enforced
 
+    -- ---- CHECK constraints -------------------------------------------
+    -- The ETL guards these on the way in (GUARD B1-B8), but a guard only
+    -- protects the load path. Nothing stopped a later UPDATE from writing a
+    -- negative length of stay, negative revenue, or a 0/1 flag set to 7 --
+    -- all three were accepted before these were added.
+    --
+    -- This is the same criticism levelled at the SOURCE schema in
+    -- docs/00-findings-and-assumptions.md: normalised is not the same as
+    -- well-constrained. The source cannot be altered, so its gaps are
+    -- documented. This schema IS ours, so its gaps are closed.
+    CONSTRAINT chk_f_los      CHECK (length_of_stay_minutes IS NULL OR length_of_stay_minutes >= 0),
+    CONSTRAINT chk_f_claim    CHECK (claim_amount   >= 0),
+    CONSTRAINT chk_f_allowed  CHECK (allowed_amount >= 0),
+    CONSTRAINT chk_f_denied   CHECK (denied_amount  >= 0),
+    CONSTRAINT chk_f_money    CHECK (allowed_amount + denied_amount <= claim_amount),
+    CONSTRAINT chk_f_dxcount  CHECK (diagnosis_count >= 0),
+    CONSTRAINT chk_f_pxcount  CHECK (procedure_count >= 0),
+    CONSTRAINT chk_f_index    CHECK (is_index_admission IN (0,1)),
+    CONSTRAINT chk_f_readmit  CHECK (is_readmission_30d IN (0,1)),
+    CONSTRAINT chk_f_age      CHECK (patient_age_years IS NULL
+                                     OR patient_age_years BETWEEN 0 AND 130),
+    -- domain closure: the source column is free-text VARCHAR(50) with no
+    -- CHECK (finding B4). Here the domain is finite and enforced.
+    CONSTRAINT chk_f_enctype  CHECK (encounter_type IN ('Outpatient','Inpatient','ER','Unknown')),
+    CONSTRAINT chk_f_status   CHECK (claim_status IS NULL OR claim_status IN
+                                     ('Paid','Pending','Denied','No Claim','Unknown')),
+
     -- ---- indexes -----------------------------------------------------
     -- Composite indexes lead with date_key because essentially every
     -- analytical query filters or groups by time first.
@@ -366,6 +405,7 @@ CREATE TABLE bridge_encounter_diagnoses (
     diagnosis_key      INT     NOT NULL,
     diagnosis_sequence TINYINT NOT NULL,
     PRIMARY KEY (encounter_key, diagnosis_key),
+    CONSTRAINT chk_bd_seq CHECK (diagnosis_sequence >= 1),
     CONSTRAINT fk_bd_enc FOREIGN KEY (encounter_key) REFERENCES fact_encounters(encounter_key),
     CONSTRAINT fk_bd_dx  FOREIGN KEY (diagnosis_key) REFERENCES dim_diagnosis(diagnosis_key),
     KEY idx_dx_only (diagnosis_key)
@@ -404,6 +444,8 @@ CREATE TABLE agg_diagnosis_procedure_pair (
                         -- allocated, NOT summed: see 05_etl.sql. Summing
                         -- allowed_amount across pairs is the fan trap.
     PRIMARY KEY (diagnosis_key, procedure_key),
+    CONSTRAINT chk_agg_count CHECK (encounter_count > 0),
+    CONSTRAINT chk_agg_money CHECK (total_allowed  >= 0),
     CONSTRAINT fk_agg_dx FOREIGN KEY (diagnosis_key) REFERENCES dim_diagnosis(diagnosis_key),
     CONSTRAINT fk_agg_px FOREIGN KEY (procedure_key) REFERENCES dim_procedure(procedure_key),
     KEY idx_count (encounter_count DESC)

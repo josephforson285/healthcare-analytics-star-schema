@@ -226,6 +226,59 @@ JUSTIFICATION, measure by measure
 
 
 =======================================================================
+SCHEMA ENFORCEMENT (not one of the brief's four decisions, but implied by
+"all necessary foreign keys ... indexes")
+=======================================================================
+
+Section B of docs/00-findings-and-assumptions.md criticises the SOURCE
+schema for being normalised but not well-constrained -- nine gaps, from
+nullable-everywhere to free-text attribute domains. That criticism only
+carries weight if this schema does better, and at first it did not: the
+warehouse had zero CHECK constraints, and a plain UPDATE was able to write
+a length of stay of -5000, revenue of -999, a 0/1 flag set to 7, and an
+age of 500. All accepted without complaint.
+
+The ETL guards (GUARD B1-B8) only protect the LOAD path. They say nothing
+about anything that touches the table afterwards.
+
+The source cannot be altered, so its gaps are documented. This schema is
+ours, so its gaps are closed -- 27 CHECK constraints:
+
+  fact_encounters    length_of_stay_minutes >= 0 (or NULL)
+                     claim_amount / allowed_amount / denied_amount >= 0
+                     allowed_amount + denied_amount <= claim_amount
+                     diagnosis_count / procedure_count >= 0
+                     is_index_admission, is_readmission_30d IN (0,1)
+                     patient_age_years BETWEEN 0 AND 130 (or NULL)
+                     encounter_type IN the three known values + 'Unknown'
+                     claim_status  IN the four known values + 'Unknown'
+  dim_date           month 1-12, quarter 1-4, day_of_week 1-7,
+                     day_of_month 1-31, day_of_year 1-366, is_weekend 0/1
+  dim_patient        effective_to >= effective_from, is_current IN (0,1)
+  dim_provider       same
+  dim_encounter_type is_emergency, is_overnight IN (0,1)
+  bridge (diagnoses) diagnosis_sequence >= 1
+  agg table          encounter_count > 0, total_allowed >= 0
+
+Every one was verified against the loaded data before being added -- all 23
+distinct rules returned zero violations -- so the constraints describe what
+the ETL already produces rather than forcing a change to it.
+
+Enforcement side by side:
+
+                            FKs  UNIQUE  CHECK  columns NOT NULL
+  healthcare_oltp (theirs)   10      1      0        22%
+  healthcare_dw   (ours)     13      3     27        73%
+
+Two notes on domain closure specifically. encounter_type and claim_status
+are free-text VARCHAR(50) in the source with no CHECK -- findings B4 and B5
+-- so 'ER', 'er' and 'Emergency' are all storable there. Here the domain is
+finite and enforced, which is the second half of the guard: the ETL maps
+unexpected values to 'Unknown' on the way in, and the constraint stops
+anything else being written later.
+
+
+=======================================================================
 DECISION 4: BRIDGE TABLES
 =======================================================================
 
