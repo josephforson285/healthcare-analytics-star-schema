@@ -186,9 +186,21 @@ CREATE TABLE dim_provider (
     effective_from  DATE    NOT NULL DEFAULT '1900-01-01',
     effective_to    DATE    NOT NULL DEFAULT '9999-12-31',
     is_current      TINYINT NOT NULL DEFAULT 1,
-    row_hash        CHAR(32),   -- covers the source specialty_id and
-                                -- department_id even though neither is
-                                -- stored, so transfers still version
+    -- No row_hash, same reasoning as dim_patient. An earlier version stored
+    -- one whose hash covered the source specialty_id and department_id, on the
+    -- theory that a provider transferring should open a new version. That was
+    -- left over from when this table still held those columns.
+    --
+    -- It is wrong now, for a reason worth stating: a dimension should version
+    -- on changes to attributes IT HOLDS. This table holds a name and a
+    -- credential. Which specialty treated a patient is an attribute of the
+    -- ENCOUNTER, and fact_encounters already records specialty_key per row --
+    -- so versioning dim_provider on a transfer would record, in a second
+    -- place, something the fact already says.
+    --
+    -- With the hash narrowed to name and credential, every attribute it covers
+    -- is a column in this row, so it is recomputed at comparison time rather
+    -- than stored. No dimension in this warehouse now persists a row_hash.
     KEY idx_provider_id (provider_id),
     KEY idx_current (provider_id, is_current)
 ) ENGINE=InnoDB COMMENT='Provider dimension, SCD Type 2; own attributes only';

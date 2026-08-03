@@ -78,9 +78,17 @@ dim_patient  (SCD Type 2 structure)
   hash matched a recomputation on 50,000/50,000 rows. CHAR(32) x 50,001
   rows for a restatement of the row beside it.
 
-  dim_provider keeps its row_hash, and the asymmetry is the point: that
-  hash covers the source specialty_id and department_id, neither of which
-  is stored there. Not derivable, so kept.
+  dim_provider carries no row_hash either. Its hash originally covered the
+  source specialty_id and department_id -- left over from when this table
+  still held those columns -- which made it look non-derivable and therefore
+  necessary. It is not. A dimension should version on changes to attributes
+  IT HOLDS, and dim_provider holds a name and a credential. Which specialty
+  treated a patient is an attribute of the ENCOUNTER, and the fact already
+  records specialty_key per row, so versioning a provider on a transfer
+  would record in a second place what the fact already says.
+
+  With the hash narrowed to name and credential, it is derivable from the
+  row and no dimension in this warehouse persists one.
 
   WHAT THE SCD2 COLUMNS ARE FOR
   effective_from / effective_to  the window during which this version was

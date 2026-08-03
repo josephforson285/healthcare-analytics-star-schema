@@ -104,14 +104,19 @@ SUBSEQUENT LOADS -- how updates are handled
 ------------------------------------------------------------------------
 Same hash-and-version mechanism as dim_patient, over:
 
-      row_hash := MD5(first_name | last_name | credential
-                      | specialty_id | department_id)
+      hash := MD5(first_name | last_name | credential)
 
-This is the dimension where Type 2 genuinely earns its cost. Clinicians
-transfer between departments and change specialty. Without versioning, a
-cardiologist moving to the ER in 2025 would retroactively reassign three
-years of cardiology encounters to the ER, and every historical
-specialty-level report would change.
+Narrower than it once was, and deliberately. The hash previously included
+specialty_id and department_id, so a transfer opened a new provider
+version. That was left over from when dim_provider still carried those
+columns. A dimension versions on changes to attributes it HOLDS, and this
+one holds a name and a credential.
+
+A cardiologist moving to the ER is still captured correctly, just in the
+right place: fact_encounters records specialty_key per encounter, so
+encounters before the move keep the cardiology key and encounters after it
+get the ER key. Historical specialty reporting is unaffected without
+versioning the provider at all.
 
 The load LEFT JOINs specialties and departments rather than inner joining
 (GUARD B1): both FKs are nullable in the source, and an inner join would

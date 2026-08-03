@@ -75,8 +75,9 @@ COMMIT;
 --      <> MD5(CONCAT_WS('|', s.mrn, s.first_name, s.last_name,
 --                            s.date_of_birth, s.gender))
 --
--- dim_provider keeps its row_hash, because that hash covers the source
--- specialty_id and department_id and neither is stored on that table.
+-- dim_provider is handled the same way. No dimension in this warehouse
+-- persists a row_hash: in every case the hash covers only attributes that
+-- table already stores, so it is recomputed rather than duplicated.
 --
 -- GUARD B1: gender is nullable in the source; mapped to 'Unknown' rather
 -- than propagating NULL into a grouping column, where it would silently
@@ -124,22 +125,20 @@ COMMIT;
 -- =====================================================================
 INSERT INTO dim_provider (
     provider_key, provider_id, first_name, last_name, credential,
-    effective_from, effective_to, is_current, row_hash)
+    effective_from, effective_to, is_current)
 VALUES
     (-1, -1, 'Unknown', 'Unknown', NULL,
-     '1900-01-01', '9999-12-31', 1, NULL);
+     '1900-01-01', '9999-12-31', 1);
 
 INSERT INTO dim_provider (
     provider_id, first_name, last_name, credential,
-    effective_from, effective_to, is_current, row_hash)
+    effective_from, effective_to, is_current)
 SELECT
     pr.provider_id,
     pr.first_name,
     pr.last_name,
     pr.credential,
-    '1900-01-01', '9999-12-31', 1,
-    MD5(CONCAT_WS('|', pr.first_name, pr.last_name, pr.credential,
-                       pr.specialty_id, pr.department_id))
+    '1900-01-01', '9999-12-31', 1
 FROM healthcare_oltp.providers pr;
 COMMIT;
 
