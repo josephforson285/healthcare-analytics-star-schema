@@ -3,23 +3,6 @@ PART 3.4 DELIVERABLE -- etl_design.txt
 ETL design: dimension loads, fact load, bridges, refresh strategy
 =======================================================================
 
-The working implementation is sql/05_etl.sql. This document explains the
-reasoning, covers the incremental path that the initial full load does not
-exercise, and states the constraints the source system imposes.
-
-THE CONSTRAINT THAT SHAPES EVERYTHING BELOW
--------------------------------------------
-No table in the source system has created_at, updated_at, or any version
-column (finding B9). There is therefore NO WAY TO ASK THE SOURCE WHAT
-CHANGED. Every design choice about incremental loading, change detection
-and late-arriving data is a workaround for that single missing feature.
-Where a timestamp would give an exact answer, this design substitutes
-either a content hash or a time-boxed reprocessing window.
-
-A secondary constraint: the source cannot be altered, so its eight
-constraint gaps (B1-B8) must be defended against here. Each guard in
-sql/05_etl.sql is marked with the finding it addresses.
-
 
 =======================================================================
 WHERE EACH OF THE BRIEF'S QUESTIONS IS ANSWERED
@@ -56,143 +39,125 @@ WHERE EACH OF THE BRIEF'S QUESTIONS IS ANSWERED
 1. DIMENSION LOAD LOGIC
 =======================================================================
 
-1.1 dim_date -- generated, not extracted
-----------------------------------------
-No source table contains a calendar, so dim_date is generated from a
-numbers sequence: 2023-01-01 to 2025-12-31, 1,096 rows.
+Q1. HOW DO YOU POPULATE dim_patient FROM THE patients TABLE?
+------------------------------------------------------------
 
-  FOR each day d in [range]:
-      date_key       := CAST(FORMAT(d,'YYYYMMDD') AS INT)   -- 20240612
-      full_date      := d
-      year, quarter, month, day_of_month, day_of_week ...
-      calendar_month := FORMAT(d, 'YYYY-MM')                -- '2024-06'
-      is_weekend     := (day_of_week IN (6,7))
+  STEP 1 -- insert the unknown member first
+      (patient_key = -1, 'UNKNOWN', 'Unknown', ...)
 
-Loaded ONCE and never refreshed. The range deliberately extends a full
-year beyond the latest data so a late-arriving fact always finds a date
-key; a fact whose date_key does not exist would fail the foreign key and
-abort the load.
+  STEP 2 -- one row per source patient
+      FOR each row in source.patients:
+          patient_key    := auto-assigned surrogate
+          gender         := 'F' or 'M', anything else -> 'U'    GUARD B1
+          date_of_birth  := keep if 1900..today, else NULL      GUARD B10
+          effective_from := '1900-01-01'
+          effective_to   := '9999-12-31'
+          is_current     := 1
+          flag any corrected value            -> etl_load_log.rows_rejected
 
-Why date_key is YYYYMMDD rather than a sequence: it is readable in raw
-fact rows during debugging, sorts chronologically as an integer, and lets
-a human sanity-check a fact row without joining anything.
+  50,000 rows in, 50,001 out. No join, no aggregation.
 
-1.2 dim_patient -- SCD Type 2, hash-based change detection
------------------------------------------------------------
-INITIAL LOAD
-  INSERT the unknown member first (patient_key = -1), then one row per
-  source patient with effective_from='1900-01-01',
-  effective_to='9999-12-31', is_current=1, and:
+  WHY -1 EXISTS: a fact whose patient lookup fails points there. The
+  alternative is dropping the encounter, which loses real clinical activity
+  to keep the model tidy. With an unknown member the encounter is still
+  counted and the gap is visible on a report. Every dimension has one.
+  Verified after each load: 0 facts land on -1.
 
-      (no row_hash column -- the hash is recomputed from the stored
-       columns at comparison time, since dim_patient already holds every
-       attribute it covers. dim_provider DOES store one, because its hash
-       covers the source specialty_id and department_id and neither is
-       stored on that table.)
+  WHY THE SURROGATE KEY: the fact points at patient_key, never at
+  patient_id, so a re-keyed source cannot corrupt history.
 
-SUBSEQUENT LOADS -- how updates are handled
+  AGE IS NOT STORED HERE. It changes with the calendar, not with any source
+  event, so it would rot. Age at the time of care goes on the fact row.
 
-  Because there is no updated_at, change detection compares CONTENT:
+  BAD INPUT DOES NOT PASS THROUGH -- but only because of the guards above.
+  Tested by injecting gender 'Z', two NULL names, and a date_of_birth of
+  2099-01-01: all three loaded unchallenged before they existed. See 2.2b.
 
-      FOR each patient p in source:
-          incoming_hash := MD5(p.mrn | p.first_name | ... )
-          current       := SELECT * FROM dim_patient
-                           WHERE patient_id = p.patient_id AND is_current = 1
-          current_hash  := MD5(current.mrn | current.first_name | ... )
 
-          IF current IS NULL:                       -- new patient
-              INSERT new row, is_current = 1
+Q2. HOW DO YOU POPULATE dim_date (ONE-TIME LOAD)?
+--------------------------------------------------
+GENERATED, not extracted -- no table in the source contains a calendar.
 
-          ELSE IF current_hash <> incoming_hash:      -- attributes changed
-              -- close the old version
-              UPDATE current SET effective_to = TODAY - 1 DAY,
-                                 is_current   = 0
-              -- open a new one
-              INSERT new row WITH effective_from = TODAY,
-                                  effective_to   = '9999-12-31',
-                                  is_current     = 1
+      FOR each day d from 2023-01-01 to 2025-12-31:
+          date_key       := YYYYMMDD as an integer     -- 20240612
+          full_date      := d
+          calendar_month := 'YYYY-MM'                  -- '2024-06'
+          year, quarter, month, day_of_month, day_of_week,
+          day_of_year, week_of_year
+          is_weekend     := day_of_week IN (6,7)
 
-          ELSE: do nothing                          -- unchanged
+  1,096 rows, built by cross-joining digit tables into a sequence, adding
+  it to the start date, and deriving every attribute from the result.
 
-  The hash is what replaces the missing updated_at. It is exact for
-  detecting THAT something changed; what it cannot tell you is WHEN it
-  changed, so effective_from is the load date rather than the true event
-  date. That is a real limitation and it is the direct consequence of
-  finding B9. With source timestamps, effective_from would be accurate.
+  date_key IS YYYYMMDD, NOT A SEQUENCE. FLOOR(date_key/100) then gives the
+  month arithmetically -- which is why Q1 and Q4 join no date dimension at
+  all. Trade-off: useless for day arithmetic, since 20230201 - 20230131 is
+  70, not 1. Day gaps need DATEDIFF on full_date.
 
-  WHY TYPE 2 RATHER THAN TYPE 1 HERE: overwriting would rewrite history.
-  If a patient's recorded gender is corrected in 2025, Type 1 would make
-  every 2023 encounter report the new value, and last year's published
-  figures would silently stop reconciling. Type 2 keeps each encounter
-  pointing at the patient as they were recorded at the time.
+  RANGE RUNS A YEAR PAST THE DATA. A late-arriving fact must always find a
+  date key; a missing one fails the foreign key and aborts the load.
 
-  AGE IS NOT IN THIS DIMENSION. Age changes with the calendar, not with
-  any source event, so an SCD mechanism driven by source changes would
-  never fire for it -- the value would simply rot. Age at the time of care
-  is computed once, at fact load, and stored on the fact row.
+  LOADED ONCE. Nothing in the source can change it -- extend the range every
+  few years, nothing more.
 
-1.3 dim_provider -- SCD Type 2, own attributes only
-------------------------------------------------------------------------
-Same hash-and-version mechanism as dim_patient, over:
 
-      hash := MD5(first_name | last_name | credential)
+Q3. HOW DO YOU HANDLE UPDATES TO DIMENSIONS?
+---------------------------------------------
+Decide the SCD type per dimension first, because six of eight need no
+update logic at all:
 
-Narrower than it once was, and deliberately. The hash previously included
-specialty_id and department_id, so a transfer opened a new provider
-version. That was left over from when dim_provider still carried those
-columns. A dimension versions on changes to attributes it HOLDS, and this
-one holds a name and a credential.
+  dim_date                              never refreshed
+  dim_department, dim_specialty,        Type 1 -- overwrite, fully rebuilt
+  dim_diagnosis, dim_procedure          each load. All under 50 rows.
+  dim_encounter_type                    static, 3 rows, enumerated in ETL
+  dim_patient, dim_provider             Type 2 -- versioned
 
-A cardiologist moving to the ER is still captured correctly, just in the
-right place: fact_encounters records specialty_key per encounter, so
-encounters before the move keep the cardiology key and encounters after it
-get the ER key. Historical specialty reporting is unaffected without
-versioning the provider at all.
+  TYPE 1 needs no comparison: always write whatever the source says now. A
+  department's floor changing is a correction, not a historical event.
 
-The load LEFT JOINs specialties and departments rather than inner joining
-(GUARD B1): both FKs are nullable in the source, and an inner join would
-silently drop providers with no recorded specialty -- taking every one of
-their encounters out of the warehouse with them.
+  TYPE 2: the source has no updated_at (finding B9), so the only available
+  signal is comparing CONTENT.
 
-1.4 dim_department -- SCD Type 1
----------------------------------
-Overwrite in place. A department's floor or capacity changing is a
-correction to a current fact about the building, not a historical event
-worth preserving. Type 2 here would add versioning machinery to answer a
-question nobody asks.
+      FOR each patient in source:
+          incoming := MD5(mrn | first_name | last_name | dob | gender)
+          current  := MD5(same columns from the stored row
+                          WHERE is_current = 1)
 
-1.5 dim_diagnosis / dim_procedure -- conformed on CODE
--------------------------------------------------------
-GUARD B6: the source has no UNIQUE on icd10_code or cpt_code, so the same
-clinical code can exist under two different surrogate ids and split every
-aggregate built on it. The load therefore GROUPs BY the code and keeps
-MIN(id) as a deterministic representative:
+          IF no current row:        INSERT new, is_current = 1
+          ELIF incoming <> current: UPDATE old SET effective_to = TODAY-1,
+                                                   is_current   = 0
+                                    INSERT new SET effective_from = TODAY,
+                                                   is_current     = 1
+          ELSE:                     do nothing
 
-      INSERT INTO dim_diagnosis (...)
-      SELECT MIN(diagnosis_id), icd10_code, MIN(icd10_description),
-             derive_chapter(icd10_code)
+  THE HASH IS NOT STORED. Every attribute it covers is already a column in
+  that row, so it is recomputed at comparison time.
+
+  WHY TYPE 2 HERE: overwriting rewrites history. Correct a patient's gender
+  in 2026 and Type 1 makes every 2023 encounter report the new value, so
+  last year's published figures stop reconciling.
+
+  TWO LIMITATIONS: the hash detects THAT something changed, not WHEN, so
+  effective_from is the load date rather than the event date. And all three
+  SCD2 columns are currently constant, because the implemented ETL does a
+  full load and never opens a second version -- they are structure for
+  section 4, demonstrated by changing a source gender and getting two
+  correctly dated rows.
+
+
+CONFORMING dim_diagnosis / dim_procedure ON CODE, NOT ID
+---------------------------------------------------------
+GUARD B6. The source has no UNIQUE on icd10_code or cpt_code, so one
+clinical code can exist under two ids and split every aggregate built on it.
+
+      INSERT INTO dim_diagnosis
+      SELECT MIN(diagnosis_id), icd10_code, MIN(icd10_description)
       FROM source.diagnoses
       GROUP BY icd10_code
 
-Conforming on the natural business key rather than the surrogate id is
-what makes the dimension trustworthy regardless of source hygiene.
-
-(An earlier version also derived icd10_chapter and cpt_category as roll-up
-levels. Both were removed -- no query used them, and the brief never asked
-for them. They can be added back the day a question needs them.)
-
-1.6 The unknown member (-1) in every dimension
------------------------------------------------
-Each dimension gets a row with key -1 before anything else is loaded. Any
-fact whose dimension lookup fails points there instead of carrying a NULL
-foreign key.
-
-This matters more than it looks. The alternative -- dropping facts whose
-dimension reference is missing -- loses real clinical activity in order to
-keep the model tidy, which is exactly backwards. With an unknown member
-the encounter is still counted, revenue still reconciles, and the data
-quality gap is VISIBLE as a row on a report rather than as a silent
-shortfall nobody notices.
+Conforming on the natural business key makes the dimension trustworthy
+regardless of source hygiene. The bridges join on code too, so two ids for
+I10 resolve to one dimension row and the counts stay whole.
 
 
 =======================================================================
