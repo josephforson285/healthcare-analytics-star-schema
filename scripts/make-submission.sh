@@ -88,10 +88,12 @@ TWO THINGS TO READ FIRST
      the time of care is a property of the encounter.
 
    Note on dim_specialty: it is joined DIRECTLY from the fact via
-   specialty_key, and specialty_name is ALSO denormalised onto
-   dim_provider. Both are one hop from the fact, so neither path is a
-   snowflake -- what would snowflake is making dim_provider the only
-   route to the specialty. Reasoning in design_decisions.txt.
+   specialty_key, and dim_provider holds no specialty or department
+   columns at all. Every dimension sits one hop from the fact and there
+   are ZERO dimension-to-dimension foreign keys -- no snowflake edges
+   anywhere. An earlier version duplicated specialty_name onto
+   dim_provider; it saved no join and drifted on rename, so it was
+   removed. Reasoning in design_decisions.txt.
 
 
 REPRODUCING THE RESULTS
