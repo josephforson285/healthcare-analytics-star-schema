@@ -9,8 +9,8 @@
 --     Q3  via dim_specialty 0.21s   via dim_provider 0.22s
 --     Q4  via dim_specialty 1.20s   via dim_provider 1.33s
 -- The smaller table wins, and it is the shorter path to the attribute.
--- specialty_name remains on dim_provider for queries that need provider
--- detail AND specialty together -- none of these four do.
+-- dim_provider holds no specialty column at all: every dimension in this
+-- model hangs directly off the fact, with no dimension-to-dimension edges.
 --
 -- dim_patient and dim_department are not joined by any query here.
 -- Q1 counts DISTINCT patient_key off the fact without needing patient

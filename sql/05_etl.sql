@@ -114,7 +114,44 @@ COMMIT;
 
 
 -- =====================================================================
--- 3. dim_department -- SCD Type 1, straight copy plus unknown member.
+-- 3. dim_provider -- the provider's OWN attributes only.
+--
+-- No specialty or department columns, so this has no dependency on those
+-- dimensions and no join to resolve their keys. It can load right after
+-- dim_patient.
+--
+-- The hash still covers the source specialty_id and department_id even
+-- though neither is stored, so a provider transferring specialty or
+-- department is still detected and still opens a new SCD2 version. What
+-- specialty an encounter belonged to is recorded on the fact row, which is
+-- where the question is actually asked from.
+-- =====================================================================
+INSERT INTO dim_provider (
+    provider_key, provider_id, first_name, last_name, full_name, credential,
+    effective_from, effective_to, is_current, row_hash)
+VALUES
+    (-1, -1, 'Unknown', 'Unknown', 'Unknown Provider', NULL,
+     '1900-01-01', '9999-12-31', 1, NULL);
+
+INSERT INTO dim_provider (
+    provider_id, first_name, last_name, full_name, credential,
+    effective_from, effective_to, is_current, row_hash)
+SELECT
+    pr.provider_id,
+    pr.first_name,
+    pr.last_name,
+    CONCAT(COALESCE(pr.first_name,''), ' ', COALESCE(pr.last_name,''),
+           IF(pr.credential IS NULL, '', CONCAT(', ', pr.credential))),
+    pr.credential,
+    '1900-01-01', '9999-12-31', 1,
+    MD5(CONCAT_WS('|', pr.first_name, pr.last_name, pr.credential,
+                       pr.specialty_id, pr.department_id))
+FROM healthcare_oltp.providers pr;
+COMMIT;
+
+
+-- =====================================================================
+-- 4. dim_department -- SCD Type 1, straight copy plus unknown member.
 -- =====================================================================
 INSERT INTO dim_department (department_key, department_id, department_name, floor, capacity)
 VALUES (-1, -1, 'Unknown', NULL, NULL);
@@ -126,7 +163,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 4. dim_specialty -- SCD Type 1, straight copy plus unknown member.
+-- 5. dim_specialty -- SCD Type 1, straight copy plus unknown member.
 --
 -- Joined directly from the fact via specialty_key, so a query grouping by
 -- specialty need not touch dim_provider at all.
@@ -141,7 +178,7 @@ COMMIT;
 
 
 -- =====================================================================
--- 5. dim_encounter_type -- three rows, enumerated rather than sourced.
+-- 6. dim_encounter_type -- three rows, enumerated rather than sourced.
 --
 -- GUARD B4: the source column is free-text VARCHAR(50) with no CHECK, so
 -- the valid set cannot be derived from the data -- doing SELECT DISTINCT
@@ -163,61 +200,6 @@ INSERT INTO dim_encounter_type (type_name, is_emergency, is_overnight) VALUES
 COMMIT;
 
 
--- =====================================================================
--- 6. dim_provider -- the provider's OWN attributes only.
---
--- Loaded AFTER dim_specialty and dim_department because it now holds
--- enforced foreign keys to both.
---
--- specialty_name / specialty_code / home_department_name are deliberately
--- NOT stored here. They live in dim_specialty and dim_department, which the
--- fact reaches directly. A second copy on this table removed no join -- all
--- three dimensions sit one hop from the fact -- and drifted when a specialty
--- was renamed, since the hash covers specialty_ID rather than specialty_NAME.
---
--- What IS stored is specialty_key and home_department_key: enforced
--- surrogate references, not the bare natural-key integers used previously.
--- Those were unconstrained -- home_department_id = 9999 was accepted without
--- complaint -- and joining on a natural key defeats the purpose of having a
--- surrogate key at all.
---
--- LEFT JOINs with COALESCE to -1 (GUARD B1): specialty_id and department_id
--- are nullable in the source, and an inner join would silently drop any
--- provider whose specialty was never recorded.
--- =====================================================================
-INSERT INTO dim_provider (
-    provider_key, provider_id, first_name, last_name, full_name, credential,
-    specialty_key, home_department_key,
-    effective_from, effective_to, is_current, row_hash)
-VALUES
-    (-1, -1, 'Unknown', 'Unknown', 'Unknown Provider', NULL,
-     -1, -1,
-     '1900-01-01', '9999-12-31', 1, NULL);
-
-INSERT INTO dim_provider (
-    provider_id, first_name, last_name, full_name, credential,
-    specialty_key, home_department_key,
-    effective_from, effective_to, is_current, row_hash)
-SELECT
-    pr.provider_id,
-    pr.first_name,
-    pr.last_name,
-    CONCAT(COALESCE(pr.first_name,''), ' ', COALESCE(pr.last_name,''),
-           IF(pr.credential IS NULL, '', CONCAT(', ', pr.credential))),
-    pr.credential,
-    COALESCE(dsp.specialty_key,  -1),                               -- GUARD B1
-    COALESCE(ddept.department_key, -1),                              -- GUARD B1
-    '1900-01-01', '9999-12-31', 1,
-    -- The hash is computed from the SOURCE natural keys, not the surrogate
-    -- keys resolved above. Surrogate keys are ours and could in principle be
-    -- reassigned by a reload; the source ids are what actually changed or
-    -- did not. Hashing our own keys would risk spurious versions.
-    MD5(CONCAT_WS('|', pr.first_name, pr.last_name, pr.credential,
-                       pr.specialty_id, pr.department_id))
-FROM      healthcare_oltp.providers pr
-LEFT JOIN dim_specialty   dsp   ON dsp.specialty_id    = pr.specialty_id
-LEFT JOIN dim_department  ddept ON ddept.department_id  = pr.department_id;
-COMMIT;
 
 
 -- =====================================================================
@@ -467,7 +449,8 @@ LEFT JOIN healthcare_oltp.patients   p   ON p.patient_id     = e.patient_id
 LEFT JOIN dim_patient                dp  ON dp.patient_id    = e.patient_id  AND dp.is_current = 1
 LEFT JOIN dim_provider               dpr ON dpr.provider_id  = e.provider_id AND dpr.is_current = 1
 LEFT JOIN dim_department             dd  ON dd.department_id = e.department_id
-LEFT JOIN dim_specialty              dsp ON dsp.specialty_key = dpr.specialty_key
+LEFT JOIN healthcare_oltp.providers  psrc ON psrc.provider_id  = e.provider_id
+LEFT JOIN dim_specialty              dsp ON dsp.specialty_id  = psrc.specialty_id
 LEFT JOIN dim_encounter_type         det ON det.type_name     = TRIM(e.encounter_type)
 LEFT JOIN _bill    bl ON bl.encounter_id = e.encounter_id
 LEFT JOIN _dx      dx ON dx.encounter_id = e.encounter_id

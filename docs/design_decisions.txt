@@ -78,19 +78,17 @@ dim_patient  (SCD Type 2 structure)
 dim_provider  (SCD Type 2 structure)
 -----------------------------------------------------------------------
   provider_key INT PK, provider_id, full_name, credential,
-  specialty_key, home_department_key,      <-- enforced FKs, names live
-                                             in those dimensions
+  (no specialty or department columns -- see note)
   effective_from, effective_to, is_current
 
-  The specialty and department NAMES are not held here. They live in
-  dim_specialty and dim_department, which the fact reaches directly via
-  specialty_key and department_key. A duplicate copy here removed no join
-  -- all three dimensions are one hop from the fact -- and drifted when a
-  specialty was renamed, because the hash covers specialty_id not
-  specialty_name. The references stay -- as enforced surrogate FKs, not
-  bare natural-key ints -- because a provider moving specialty or
-  department is a real change that must open a new version, and each
-  version should record which one it was valid for.
+  Carries no specialty or department reference at all. The fact records
+  provider_key AND specialty_key per encounter, so "which specialty was
+  this provider in, and when" is answerable from the fact. Putting a
+  reference here as well would add a dimension-to-dimension edge -- a
+  snowflake -- for a column no query reads.
+
+  Transfers still version correctly: row_hash covers the source
+  specialty_id and department_id even though neither is stored.
 
 
 -----------------------------------------------------------------------

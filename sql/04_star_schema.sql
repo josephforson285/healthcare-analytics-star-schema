@@ -145,67 +145,48 @@ CREATE TABLE dim_specialty (
 ) ENGINE=InnoDB COMMENT='Specialty dimension; joined directly from the fact';
 
 -- ---------------------------------------------------------------------
--- dim_provider -- SCD Type 2. Holds the provider's OWN attributes only.
+-- dim_provider -- SCD Type 2. The provider's OWN attributes, nothing else.
 --
--- specialty_name, specialty_code and home_department_name were originally
--- carried here as well, denormalised, on the argument that a query already
--- joining dim_provider would then avoid a second join. That argument was
--- wrong, and it is worth recording why.
+-- No specialty or department columns at all, and deliberately no foreign
+-- keys to those dimensions. Two earlier attempts got this wrong:
 --
--- The fact table carries provider_key, specialty_key AND department_key
--- independently. So a query wanting all three names joins all three
--- dimensions DIRECTLY off the fact -- one hop each. There was never a
--- "second hop" to save, which means the duplicated columns removed no
--- join at all. They were redundancy, not denormalisation.
+--   1. Denormalised COPIES of specialty_name / home_department_name. They
+--      removed no join -- the fact carries provider_key, specialty_key and
+--      department_key independently, so all three dimensions are one hop
+--      away -- and they drifted on rename, because the hash below covers
+--      specialty_id rather than specialty_name.
 --
--- Those are different things and only one of them is a Kimball pattern:
---     collapsing a HIERARCHY into ONE dimension   -> removes real joins
---     the SAME attribute in TWO dimensions        -> removes nothing
--- The test is simply whether the duplicate copy eliminates a join. Here
--- it did not.
+--   2. Then enforced FKs, dim_provider -> dim_specialty and
+--      dim_provider -> dim_department. That fixed the enforcement gap and
+--      created a worse problem: those are SNOWFLAKE EDGES, the exact shape
+--      a star schema exists to avoid. It also forced this table to be
+--      created and loaded after two others.
 --
--- It also actively drifted. The SCD2 hash below covers specialty_ID, not
--- specialty_NAME, so renaming a specialty in the source left this table
--- stale while dim_specialty updated -- two tables giving two different
--- answers to the same question, with no error raised.
+-- Both were solving the wrong problem. The right question was whether the
+-- columns belonged here at all, and they do not:
+--   * no query reads them
+--   * the fact already records provider_key AND specialty_key per
+--     encounter, so "which specialty was this provider in, and when" is
+--     answerable from the fact without them
+--   * SCD2 change detection reads the SOURCE natural keys, so a provider
+--     transferring specialty or department still opens a new version
 --
--- The relationships are KEPT, because they earn their place in the
--- change-detection hash: a provider genuinely moving specialty or
--- department is a real historical event that must open a new version, and
--- each version should record which specialty/department it was valid for.
---
--- They are held as SURROGATE keys with enforced foreign keys, not as bare
--- natural-key integers. An earlier version stored specialty_id and
--- home_department_id -- the natural keys -- with no constraint at all, and
--- the difference is not cosmetic:
---   * unenforced. Setting home_department_id = 9999 was accepted without
---     complaint, while the fact table's department_key rejected the same
---     value on its foreign key.
---   * joining on a natural key bypasses the surrogate key, which is the
---     one thing surrogate keys exist to prevent.
---
--- NOTE on home_department_key: this is the department the CLINICIAN
--- belongs to, which is a different question from the department the
--- ENCOUNTER happened in (fact_encounters.department_key). They are equal
--- throughout this dataset, but modelling them as one would make a
--- cardiologist covering an ER shift unrepresentable.
+-- Every dimension in this model now hangs directly off the fact and
+-- nothing else. That is the shape the whole exercise is about.
 -- ---------------------------------------------------------------------
 CREATE TABLE dim_provider (
-    provider_key         INT AUTO_INCREMENT PRIMARY KEY,
-    provider_id          INT          NOT NULL,
-    first_name           VARCHAR(100),
-    last_name            VARCHAR(100),
-    full_name            VARCHAR(220),
-    credential           VARCHAR(20),
-    -- enforced surrogate references; the NAMES live in those dimensions
-    specialty_key        INT,
-    home_department_key  INT,
-    effective_from       DATE    NOT NULL DEFAULT '1900-01-01',
-    effective_to         DATE    NOT NULL DEFAULT '9999-12-31',
-    is_current           TINYINT NOT NULL DEFAULT 1,
-    row_hash             CHAR(32),
-    CONSTRAINT fk_dpr_spec FOREIGN KEY (specialty_key)       REFERENCES dim_specialty(specialty_key),
-    CONSTRAINT fk_dpr_dept FOREIGN KEY (home_department_key) REFERENCES dim_department(department_key),
+    provider_key    INT AUTO_INCREMENT PRIMARY KEY,
+    provider_id     INT          NOT NULL,
+    first_name      VARCHAR(100),
+    last_name       VARCHAR(100),
+    full_name       VARCHAR(220),
+    credential      VARCHAR(20),
+    effective_from  DATE    NOT NULL DEFAULT '1900-01-01',
+    effective_to    DATE    NOT NULL DEFAULT '9999-12-31',
+    is_current      TINYINT NOT NULL DEFAULT 1,
+    row_hash        CHAR(32),   -- covers the source specialty_id and
+                                -- department_id even though neither is
+                                -- stored, so transfers still version
     KEY idx_provider_id (provider_id),
     KEY idx_current (provider_id, is_current)
 ) ENGINE=InnoDB COMMENT='Provider dimension, SCD Type 2; own attributes only';
