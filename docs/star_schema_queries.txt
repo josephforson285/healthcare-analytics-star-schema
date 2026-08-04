@@ -174,8 +174,7 @@ Q3: 30-DAY READMISSION RATE
 Definition assumed: the index event is an inpatient discharge; a
 readmission is ANY subsequent encounter by the same patient within 30 days.
 The brief says only "return within 30 days" and does not restrict the
-return type. Full reasoning, both result sets, and the one-line change to
-switch: etl-logic-walkthrough.md, "The one open question".
+return type.
 
 1. THE SQL
 

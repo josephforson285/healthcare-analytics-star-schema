@@ -107,7 +107,7 @@ just documented as inadvisable.** -->
 ## 4. Performance quantification
 
 Same machine, same data, median of 9 warm runs. **Every star query's output was
-diffed row-by-row against its OLTP counterpart before any timing was recorded**. Raw plans in [`results/`](../results/).
+diffed row-by-row against its OLTP counterpart before any timing was recorded**.
 
 | Query | OLTP | Star | Factor | Mechanism |
 |---|---|---|---|---|
