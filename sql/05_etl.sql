@@ -1,17 +1,6 @@
 -- =====================================================================
--- 05_etl.sql
--- Initial full load: healthcare_oltp -> healthcare_dw
---
--- Order matters. Dimensions first (the fact needs their surrogate keys),
--- then the fact, then the bridges (they need encounter_key), then the
--- aggregate table (it reads the bridges).
---
+-- Initial full load: healthcare_oltp -> healthcare_dw--
 -- DATA QUALITY GUARDS
--- The source schema has no UNIQUE constraints on the junction tables, no
--- CHECK constraints on dates or amounts, and nullable columns throughout
--- (findings B1-B8 in docs/00-findings-and-assumptions.md). Since we may
--- not alter the source, every one of those defects is neutralised here
--- instead. Each guard is marked "GUARD Bn" against its finding.
 -- =====================================================================
 
 USE healthcare_dw;
@@ -24,11 +13,7 @@ SET @load_id = LAST_INSERT_ID();
 
 
 -- =====================================================================
--- 1. dim_date -- one-time load, 2023-01-01 .. 2025-12-31
---
--- Generated rather than sourced: no table in the OLTP system contains a
--- calendar. Range extends a year past the data so late-arriving facts
--- always find a date key.
+-- 1. dim_date -- one-time load
 -- =====================================================================
 INSERT INTO dim_date (
     date_key, full_date, year, quarter, month, calendar_month,
@@ -64,24 +49,6 @@ COMMIT;
 
 -- =====================================================================
 -- 2. dim_patient -- SCD Type 2 structure, initial version of every row.
---
--- Change detection compares a content hash, since the source has no
--- updated_at (finding B9). The hash is NOT stored on this table: every
--- attribute it covers is already a column here, so it is recomputed from
--- the stored columns and compared with the incoming row --
---
---   WHERE MD5(CONCAT_WS('|', d.mrn, d.first_name, d.last_name,
---                            d.date_of_birth, d.gender))
---      <> MD5(CONCAT_WS('|', s.mrn, s.first_name, s.last_name,
---                            s.date_of_birth, s.gender))
---
--- dim_provider is handled the same way. No dimension in this warehouse
--- persists a row_hash: in every case the hash covers only attributes that
--- table already stores, so it is recomputed rather than duplicated.
---
--- GUARD B1: gender is nullable in the source; mapped to 'Unknown' rather
--- than propagating NULL into a grouping column, where it would silently
--- drop rows from GROUP BY output.
 -- =====================================================================
 INSERT INTO dim_patient (
     patient_key, patient_id, mrn, first_name, last_name,
@@ -89,16 +56,7 @@ INSERT INTO dim_patient (
 VALUES
     (-1, -1, 'UNKNOWN', 'Unknown', 'Unknown',
      NULL, 'U', '1900-01-01', '9999-12-31', 1);
--- ^ the "unknown member". Standard Kimball practice: a fact whose
---   dimension lookup fails points here rather than carrying a NULL FK,
---   so the row is still counted and the gap is visible instead of silent.
 
--- Validation happens BEFORE the insert, into a staging table, so that
--- anything corrected or rejected can be counted rather than silently
--- absorbed. COALESCE alone was not enough: it handles a NULL gender but
--- passes a gender of 'Z' straight through, and says nothing at all about a
--- date_of_birth of 2099-01-01. Both were verified to load unchallenged
--- before this step existed.
 DROP TEMPORARY TABLE IF EXISTS _patient_stage;
 CREATE TEMPORARY TABLE _patient_stage (
     patient_id      INT PRIMARY KEY,
@@ -118,15 +76,12 @@ SELECT
     p.mrn,
     p.first_name,
     p.last_name,
-    -- GUARD B8-style temporal sanity: a patient cannot be born in the future
-    -- or before 1900. Implausible values become NULL rather than propagating
-    -- into patient_age_years on 300,000 fact rows.
+
     CASE WHEN p.date_of_birth BETWEEN '1900-01-01' AND CURDATE()
          THEN p.date_of_birth ELSE NULL END,
-    -- GUARD B1 + domain closure: NULL *and* any unexpected value both become
-    -- 'U'. COALESCE alone would let 'Z' through.
+
     CASE WHEN p.gender IN ('F','M') THEN p.gender ELSE 'U' END,
-    -- the flags are what make the corrections countable
+   
     (p.gender IS NULL OR p.gender NOT IN ('F','M')),
     (p.date_of_birth IS NOT NULL
      AND p.date_of_birth NOT BETWEEN '1900-01-01' AND CURDATE()),
@@ -141,9 +96,7 @@ SELECT
     s.gender, '1900-01-01', '9999-12-31', 1
 FROM _patient_stage s;
 
--- Record what had to be corrected. @patient_flagged feeds
--- etl_load_log.rows_rejected at the end of the load, which was previously
--- hardcoded to 0 -- the log claimed zero rejections without measuring any.
+
 SET @patient_flagged = (SELECT COUNT(*) FROM _patient_stage
                         WHERE flag_gender = 1 OR flag_dob = 1 OR flag_noname = 1);
 SET @patient_flag_detail = (SELECT CONCAT(
@@ -156,16 +109,6 @@ COMMIT;
 
 -- =====================================================================
 -- 3. dim_provider -- the provider's OWN attributes only.
---
--- No specialty or department columns, so this has no dependency on those
--- dimensions and no join to resolve their keys. It can load right after
--- dim_patient.
---
--- The hash still covers the source specialty_id and department_id even
--- though neither is stored, so a provider transferring specialty or
--- department is still detected and still opens a new SCD2 version. What
--- specialty an encounter belonged to is recorded on the fact row, which is
--- where the question is actually asked from.
 -- =====================================================================
 INSERT INTO dim_provider (
     provider_key, provider_id, first_name, last_name, credential,
@@ -201,9 +144,6 @@ COMMIT;
 
 -- =====================================================================
 -- 5. dim_specialty -- SCD Type 1, straight copy plus unknown member.
---
--- Joined directly from the fact via specialty_key, so a query grouping by
--- specialty need not touch dim_provider at all.
 -- =====================================================================
 INSERT INTO dim_specialty (specialty_key, specialty_id, specialty_name, specialty_code)
 VALUES (-1, -1, 'Unknown', 'UNK');
@@ -216,16 +156,6 @@ COMMIT;
 
 -- =====================================================================
 -- 6. dim_encounter_type -- three rows, enumerated rather than sourced.
---
--- GUARD B4: the source column is free-text VARCHAR(50) with no CHECK, so
--- the valid set cannot be derived from the data -- doing SELECT DISTINCT
--- would faithfully import 'er' and 'Emergency' as separate types if they
--- ever appeared. The domain is declared here instead, and anything the
--- fact load cannot match falls to the -1 unknown member where it is
--- visible on a report rather than silently becoming a fourth category.
---
--- is_emergency / is_overnight are the attributes that justify this being
--- a dimension at all rather than a bare string on the fact row.
 -- =====================================================================
 INSERT INTO dim_encounter_type (encounter_type_key, type_name, is_emergency, is_overnight)
 VALUES (-1, 'Unknown', 0, 0);
@@ -241,21 +171,13 @@ COMMIT;
 
 -- =====================================================================
 -- 7. dim_diagnosis / dim_procedure
---
--- GUARD B6: the source has no UNIQUE on icd10_code or cpt_code, so the
--- same clinical code could exist under two surrogate ids and split every
--- aggregate built on it. Conforming on the CODE (not the id) collapses
--- any such split. MIN(diagnosis_id) keeps a deterministic representative.
---
--- icd10_chapter and cpt_category are derived roll-up levels the source
--- has no table for.
 -- =====================================================================
 INSERT INTO dim_diagnosis (diagnosis_key, diagnosis_id, icd10_code, icd10_description)
 VALUES (-1, -1, 'UNK', 'Unknown diagnosis');
 
 INSERT INTO dim_diagnosis (diagnosis_id, icd10_code, icd10_description)
 SELECT
-    MIN(d.diagnosis_id),                                            -- GUARD B6
+    MIN(d.diagnosis_id),                                            
     d.icd10_code,
     MIN(d.icd10_description)
 FROM healthcare_oltp.diagnoses d
@@ -266,7 +188,7 @@ VALUES (-1, -1, 'UNK', 'Unknown procedure');
 
 INSERT INTO dim_procedure (procedure_id, cpt_code, cpt_description)
 SELECT
-    MIN(p.procedure_id),                                            -- GUARD B6
+    MIN(p.procedure_id),                                             
     p.cpt_code,
     MIN(p.cpt_description)
 FROM healthcare_oltp.procedures p
@@ -276,19 +198,6 @@ COMMIT;
 
 -- =====================================================================
 -- 8. fact_encounters -- the main load.
---
--- Built in stages because several measures depend on aggregates of other
--- source tables, and doing it in one statement would mean scanning the
--- junction tables once per column.
--- =====================================================================
-
--- ---------------------------------------------------------------------
--- 8a. Pre-aggregate billing to ENCOUNTER GRAIN.
---
--- GUARD B7: billing.encounter_id is not UNIQUE in the source, so a
--- double-billed encounter would be counted twice by a naive join. This
--- collapses billing to one row per encounter FIRST, so the defect is
--- neutralised once at load rather than in every downstream query.
 -- ---------------------------------------------------------------------
 DROP TEMPORARY TABLE IF EXISTS _bill;
 CREATE TEMPORARY TABLE _bill (
@@ -312,14 +221,10 @@ SELECT
          WHEN SUM(b.claim_status = 'Pending') > 0 THEN 'Pending'
          ELSE 'Paid' END
 FROM healthcare_oltp.billing b
-GROUP BY b.encounter_id;                                            -- GUARD B7
+GROUP BY b.encounter_id;                                            
 
 -- ---------------------------------------------------------------------
 -- 8b. Diagnosis and procedure counts.
---
--- GUARD B2/B3: COUNT(DISTINCT ...) rather than COUNT(*), so duplicate
--- junction rows cannot inflate the stored counts even though the source
--- permits them.
 -- ---------------------------------------------------------------------
 DROP TEMPORARY TABLE IF EXISTS _dx;
 CREATE TEMPORARY TABLE _dx (
@@ -330,7 +235,7 @@ CREATE TEMPORARY TABLE _dx (
 INSERT INTO _dx
 SELECT
     ed.encounter_id,
-    COUNT(DISTINCT ed.diagnosis_id)                                 -- GUARD B2
+    COUNT(DISTINCT ed.diagnosis_id)                                 
 FROM healthcare_oltp.encounter_diagnoses ed
 GROUP BY ed.encounter_id;
 
@@ -341,19 +246,12 @@ CREATE TEMPORARY TABLE _px (
 ) ENGINE=InnoDB;
 
 INSERT INTO _px
-SELECT ep.encounter_id, COUNT(DISTINCT ep.procedure_id)             -- GUARD B3
+SELECT ep.encounter_id, COUNT(DISTINCT ep.procedure_id)              
 FROM healthcare_oltp.encounter_procedures ep
 GROUP BY ep.encounter_id;
 
 -- ---------------------------------------------------------------------
 -- 8c. THE READMISSION FLAG -- the single highest-value precomputation.
---
--- This runs Q3's entire self-join ONCE, here, at load time. Q3 then
--- becomes a GROUP BY over a stored column.
---
--- Definition (see docs/00-findings-and-assumptions.md): index event is an
--- inpatient discharge; a readmission is ANY subsequent encounter by the
--- same patient within 30 days of that discharge.
 -- ---------------------------------------------------------------------
 DROP TEMPORARY TABLE IF EXISTS _readmit;
 CREATE TEMPORARY TABLE _readmit (encounter_id INT PRIMARY KEY) ENGINE=InnoDB;
@@ -371,15 +269,6 @@ WHERE i.encounter_type   = 'Inpatient'
 
 -- ---------------------------------------------------------------------
 -- 8d. Assemble the fact table.
---
--- GUARD B1: every dimension lookup uses LEFT JOIN + COALESCE to the -1
--- unknown member. An inner join would silently DROP encounters whose
--- patient or provider reference is missing -- losing facts to protect
--- referential neatness, which is exactly backwards.
---
--- GUARD B8: length_of_stay is clamped with GREATEST(...,0) and only
--- computed when discharge >= admission. Nothing in the source prevents a
--- negative stay, and a negative LOS would poison every average built on it.
 -- ---------------------------------------------------------------------
 INSERT INTO fact_encounters (
     encounter_id, encounter_type, claim_status,
@@ -391,19 +280,14 @@ INSERT INTO fact_encounters (
     is_index_admission, is_readmission_30d)
 SELECT
     e.encounter_id,
-    -- GUARD B4: encounter_type is free-text VARCHAR(50) in the source with no
-    -- lookup table and no CHECK, so 'ER', 'er' and 'Emergency' are all
-    -- storable and would fragment into separate groups on any report. The
-    -- domain is closed here instead: anything outside the three known values
-    -- lands in 'Unknown', where it is visible, rather than silently becoming
-    -- a fourth encounter type nobody notices.
+
     CASE TRIM(e.encounter_type)
         WHEN 'Outpatient' THEN 'Outpatient'
         WHEN 'Inpatient'  THEN 'Inpatient'
         WHEN 'ER'         THEN 'ER'
         ELSE 'Unknown'
     END,
-    -- GUARD B5: same treatment for claim_status.
+ 
     CASE TRIM(COALESCE(bl.claim_status, 'No Claim'))
         WHEN 'Paid'     THEN 'Paid'
         WHEN 'Pending'  THEN 'Pending'
@@ -415,16 +299,16 @@ SELECT
     CAST(DATE_FORMAT(e.encounter_date, '%Y%m%d') AS UNSIGNED),
     CASE WHEN e.discharge_date IS NULL THEN NULL
          ELSE CAST(DATE_FORMAT(e.discharge_date, '%Y%m%d') AS UNSIGNED) END,
-    COALESCE(dp.patient_key,   -1),                                 -- GUARD B1
-    COALESCE(dpr.provider_key, -1),                                 -- GUARD B1
-    COALESCE(dd.department_key, -1),                                -- GUARD B1
-    COALESCE(dsp.specialty_key, -1),      -- direct star join, not via provider
-    COALESCE(det.encounter_type_key, -1), -- GUARD B4: unmatched -> Unknown
+    COALESCE(dp.patient_key,   -1),                                  
+    COALESCE(dpr.provider_key, -1),                                  
+    COALESCE(dd.department_key, -1),                                 
+    COALESCE(dsp.specialty_key, -1),      
+    COALESCE(det.encounter_type_key, -1),  
 
     CASE WHEN e.discharge_date IS NULL OR e.discharge_date < e.encounter_date
          THEN NULL
          ELSE TIMESTAMPDIFF(MINUTE, e.encounter_date, e.discharge_date)
-    END,                                                            -- GUARD B8
+    END,                                                             
     TIMESTAMPDIFF(YEAR, p.date_of_birth, e.encounter_date),
 
     COALESCE(dx.diagnosis_count, 0),
@@ -453,13 +337,6 @@ COMMIT;
 
 -- =====================================================================
 -- 9. BRIDGES -- loaded after the fact, since they need encounter_key.
---
--- GUARD B2/B3: the bridge primary key is (encounter_key, diagnosis_key),
--- so duplicate source rows collapse rather than propagate. INSERT IGNORE
--- makes that explicit instead of relying on the constraint to error.
---
--- Conformed on CODE via dim_diagnosis (GUARD B6), so two source ids for
--- the same ICD-10 code map to a single dimension row.
 -- =====================================================================
 INSERT IGNORE INTO bridge_encounter_diagnoses
     (encounter_key, diagnosis_key, diagnosis_sequence)
@@ -487,16 +364,6 @@ COMMIT;
 
 -- =====================================================================
 -- 10. agg_diagnosis_procedure_pair -- Kimball aggregate navigation.
---
--- Forms the ~2.06M pair rows ONCE, here, and stores the ~1,200 distinct
--- results. Q2 then reads 1,200 rows instead of building 2.06M.
---
--- total_allowed is ALLOCATED, not summed. Summing allowed_amount across
--- pair rows is precisely the fan trap that reported $5,752.3M against a
--- true $838.7M. Dividing each encounter's revenue by its own pair count
--- means the column totals back to real revenue instead of a multiple of
--- it. This is the "weighting factor" technique from design_decisions.txt,
--- applied to the aggregate rather than the bridge.
 -- =====================================================================
 INSERT INTO agg_diagnosis_procedure_pair (diagnosis_key, procedure_key, encounter_count, total_allowed)
 SELECT
