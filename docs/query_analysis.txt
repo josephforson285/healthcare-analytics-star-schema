@@ -15,11 +15,7 @@ IMPORTANT NOTE
 ----------------------------------------
 InnoDB creates an index on every foreign key column automatically. So
 encounters.patient_id, encounters.provider_id and encounters.department_id
-are all indexed even though the brief never declares them. Three of the
-four queries therefore performed well not that bad, and
-the honest bottleneck in those cases is aggregation and join width -- not
-missing indexes. 
-
+are all indexed even though the brief never declares them. 
 
 =======================================================================
 QUESTION 1: Monthly Encounters by Specialty
@@ -45,7 +41,7 @@ Schema Analysis:
 - Result rows: 864
 
 Performance:
-- Execution time: 1.12 seconds
+- Execution time: 0.566 seconds
 - Estimated rows scanned: 314,880
 
 Bottleneck Identified:
@@ -83,7 +79,7 @@ Schema Analysis:
 - Result rows: 20
 
 Performance:
-- Execution time: 22.56 seconds   
+- Execution time: 9.874 seconds
 - Estimated rows scanned: 2,160,000
 
 Bottleneck Identified:
@@ -93,7 +89,7 @@ using their shared encounter_id. Because one encounter may have multiple diagnos
 and multiple procedures, joining the junction tables creates every diagnosis-procedure
 combination within each encounter. This causes a row explosion. MySQL must then sort and group those rows and calculate
 COUNT(DISTINCT encounter_id). The row multiplication, repeated index lookups, large sort,
-and distinct aggregation are the main causes of the approximately 22.56-second execution time.
+and distinct aggregation are the main causes of the approximately 9.874-second execution time.
 
 
 
@@ -144,8 +140,8 @@ Schema Analysis:
 - Result rows: 12
 
 Performance:
-- Execution time: 0.80 seconds        
-- Estimated rows scanned: 299,178  
+- Execution time: 0.421 seconds
+- Estimated rows scanned: 299,178
 
 Bottleneck Identified:
 
@@ -181,7 +177,7 @@ Schema Analysis:
 - Result rows: 288 
 
 Performance:
-- Execution time: 1.01 seconds
+- Execution time: 1.034 seconds
 - Estimated rows scanned: 314,924
 
 
